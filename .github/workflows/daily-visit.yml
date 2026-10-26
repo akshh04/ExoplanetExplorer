@@ -3,8 +3,8 @@ name: Daily dashboard visit
 on:
   schedule:
     # GitHub cron uses UTC. Select the matching run for Berlin's current offset.
-    - cron: '0 4 * * *'
-    - cron: '0 5 * * *'
+    - cron: '0 4,10,16,22 * * *'
+    - cron: '0 5,11,17,23 * * *'
   workflow_dispatch:
 
 permissions:
@@ -31,7 +31,7 @@ jobs:
           from zoneinfo import ZoneInfo
 
           offset = datetime.now(ZoneInfo("Europe/Berlin")).utcoffset()
-          expected = "0 4 * * *" if offset == timedelta(hours=2) else "0 5 * * *"
+          expected = "0 4,10,16,22 * * *" if offset == timedelta(hours=2) else "0 5,11,17,23 * * *"
           due = os.environ["EVENT_NAME"] == "workflow_dispatch" or os.environ["SCHEDULE"] == expected
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               output.write(f"due={str(due).lower()}\n")
@@ -41,10 +41,10 @@ jobs:
     needs: time-check
     if: needs.time-check.outputs.due == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Install browser
@@ -52,4 +52,11 @@ jobs:
           python -m pip install playwright==1.56.0
           python -m playwright install --with-deps chromium
       - name: Visit dashboard and wait for data
-        run: python scripts/visit_site.py
+        run: python -u scripts/visit_site.py
+      - name: Save browser diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-visit-diagnostics
+          path: visit-results/
+          retention-days: 7
