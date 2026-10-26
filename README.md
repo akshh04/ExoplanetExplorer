@@ -1,8 +1,23 @@
 # Exoplanet Explorer 🪐
 
-An interactive dashboard over the [NASA Exoplanet Archive](https://exoplanetarchive.ipac.caltech.edu/).
-It pulls the live `pscomppars` (Planetary Systems Composite Parameters) table and visualises how
-exoplanets are discovered, how diverse they are, and which of them could plausibly host liquid water.
+Explore confirmed planets beyond our solar system through interactive charts, planet profiles,
+and comparisons with Earth. Exoplanet Explorer is a Python/Streamlit dashboard powered by live
+data from the [NASA Exoplanet Archive](https://exoplanetarchive.ipac.caltech.edu/).
+
+**[Open the live dashboard → https://exoexplorer.streamlit.app/](https://exoexplorer.streamlit.app/)**
+
+The app reads NASA's `pscomppars` (Planetary Systems Composite Parameters) table and caches it
+for 24 hours. No account or API key is required. Habitable-zone estimates and the Earth Similarity
+Index help identify candidates for further study; they do not establish that a planet supports life.
+
+## Quick tour
+
+1. Open the live dashboard. If Streamlit shows a sleeping-app page, use its wake-up button and
+   allow time for the app to start and fetch NASA's data.
+2. Use the sidebar to filter by discovery year, method, distance, or habitability.
+3. Explore discovery trends, size and orbit, planet classes, the 3D view, and habitable candidates.
+4. Open **Profile** to inspect a planet or compare two worlds against Earth. Use **Reset filters**
+   to return to the full catalogue, or **Refresh data from NASA** to fetch fresh data.
 
 ## 🚀 Features
 
@@ -32,6 +47,11 @@ tab bar sticks to the top while scrolling, and the chosen planet survives filter
 remove it.
 
 ## 📱 Responsive layout
+
+The dashboard supports desktop and mobile screens, with compact metrics and navigation on phones.
+
+<details>
+<summary>Layout details and implementation notes</summary>
 
 The layout is driven entirely by CSS media queries rather than user-agent sniffing, so it adapts live
 as a window is resized and treats a narrow desktop window the same as a phone.
@@ -89,6 +109,8 @@ Streamlit collapses the title's column to a few pixels and its toggle label pins
 `align-items:flex-start`, which together left the switch 26px above the title's letters on desktop.
 Centring the column content and the toggle label brings both to within 3px.
 
+</details>
+
 ## 🔬 The derived science
 
 Two columns are computed rather than read from the archive.
@@ -134,22 +156,51 @@ flicker on ordinary reruns.
 
 ## 🛠️ Installation & usage
 
-1. **Install the dependencies** (Python 3.9+):
+1. **Clone the repository and install dependencies** (Python 3.9+; Python 3.12 validated):
 
    ```bash
-   pip install -r requirements.txt
+   git clone https://github.com/akshh04/ExoplanetExplorer.git
+   cd ExoplanetExplorer
+   python -m venv .venv
+   source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
+   python -m pip install -r requirements.txt
    ```
 
 2. **Run the dashboard**:
 
    ```bash
-   streamlit run app.py
+   python -m streamlit run app.py
    ```
 
 3. Open <http://localhost:8501>.
 
 Use the **🌙 Dark** toggle at the top right to switch themes; `.streamlit/config.toml` sets the
 default.
+
+An internet connection to `exoplanetarchive.ipac.caltech.edu` is required. The first load may take
+longer while NASA runs the query. If data loading fails, check connectivity and use **Try again**.
+
+## Hosting and daily morning visit
+
+The live app is hosted on **Streamlit Community Cloud** at <https://exoexplorer.streamlit.app/>.
+Community Cloud can put inactive apps to sleep. A plain HTTP health check may not create a real
+Streamlit browser session or press the wake-up button.
+
+The workflow in [`.github/workflows/daily-visit.yml`](.github/workflows/daily-visit.yml) uses Chromium
+to visit the app daily at **06:00 Europe/Berlin**, adjusting for daylight saving. It attempts to
+press Streamlit's wake-up button when present, then waits for the **Planets shown** metric to verify
+that the dashboard has loaded data. A failed visit fails the workflow rather than claiming success.
+
+The schedule becomes active once the workflow is on the repository's default branch and GitHub
+Actions is enabled. Run **Actions → Daily dashboard visit → Run workflow** to test it manually.
+GitHub schedules can run late or be dropped under load, and scheduled workflows in inactive public
+repositories may be disabled after 60 days. This is a daily wake-up attempt, not an uptime guarantee.
+
+For the repository's GitHub **About** settings, use this description and website:
+
+> Interactive exoplanet dashboard with live NASA data, discovery trends, 3D charts, planet comparisons, and habitability estimates.
+
+Website: <https://exoexplorer.streamlit.app/>
 
 ## 📚 Technologies used
 
