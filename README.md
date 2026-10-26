@@ -187,9 +187,12 @@ Community Cloud can put inactive apps to sleep. A plain HTTP health check may no
 Streamlit browser session or press the wake-up button.
 
 The workflow in [`.github/workflows/daily-visit.yml`](.github/workflows/daily-visit.yml) uses Chromium
-to visit the app daily at **06:00 Europe/Berlin**, adjusting for daylight saving. It attempts to
-press Streamlit's wake-up button when present, then waits for the **Planets shown** metric to verify
-that the dashboard has loaded data. A failed visit fails the workflow rather than claiming success.
+to visit the app at **06:00 Europe/Berlin** every morning, with additional visits at **12:00, 18:00,
+and 00:00** to reduce inactivity between portfolio visits. The schedule adjusts for daylight saving.
+The browser checks inside Community Cloud's embedded app frame, presses Streamlit's wake-up button
+when present, and verifies that **Planets shown** reports a positive count. Temporary failures are
+retried up to three times. If all attempts fail, the workflow reports a failure with page diagnostics
+and screenshots instead of claiming success.
 
 The schedule becomes active once the workflow is on the repository's default branch and GitHub
 Actions is enabled. Run **Actions → Daily dashboard visit → Run workflow** to test it manually.
