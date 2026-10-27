@@ -1,10 +1,6 @@
-name: Daily dashboard visit
+name: Manual dashboard visit
 
 on:
-  schedule:
-    # GitHub cron uses UTC. Select the matching run for Berlin's current offset.
-    - cron: '0 4,10,16,22 * * *'
-    - cron: '0 5,11,17,23 * * *'
   workflow_dispatch:
 
 permissions:
@@ -15,31 +11,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  time-check:
-    runs-on: ubuntu-latest
-    outputs:
-      due: ${{ steps.check.outputs.due }}
-    steps:
-      - id: check
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          SCHEDULE: ${{ github.event.schedule }}
-        run: |
-          python3 - <<'PY'
-          import os
-          from datetime import datetime, timedelta
-          from zoneinfo import ZoneInfo
-
-          offset = datetime.now(ZoneInfo("Europe/Berlin")).utcoffset()
-          expected = "0 4,10,16,22 * * *" if offset == timedelta(hours=2) else "0 5,11,17,23 * * *"
-          due = os.environ["EVENT_NAME"] == "workflow_dispatch" or os.environ["SCHEDULE"] == expected
-          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-              output.write(f"due={str(due).lower()}\n")
-          PY
-
   visit:
-    needs: time-check
-    if: needs.time-check.outputs.due == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
