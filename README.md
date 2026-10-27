@@ -180,24 +180,15 @@ default.
 An internet connection to `exoplanetarchive.ipac.caltech.edu` is required. The first load may take
 longer while NASA runs the query. If data loading fails, check connectivity and use **Try again**.
 
-## Hosting and daily morning visit
+## Hosting and manual visits
 
 The live app is hosted on **Streamlit Community Cloud** at <https://exoexplorer.streamlit.app/>.
-Community Cloud can put inactive apps to sleep. A plain HTTP health check may not create a real
-Streamlit browser session or press the wake-up button.
+Community Cloud can put inactive apps to sleep. If that happens, open the site and use its wake-up
+button.
 
-The workflow in [`.github/workflows/daily-visit.yml`](.github/workflows/daily-visit.yml) uses Chromium
-to visit the app at **06:00 Europe/Berlin** every morning, with additional visits at **12:00, 18:00,
-and 00:00** to reduce inactivity between portfolio visits. The schedule adjusts for daylight saving.
-The browser checks inside Community Cloud's embedded app frame, presses Streamlit's wake-up button
-when present, and verifies that **Planets shown** reports a positive count. Temporary failures are
-retried up to three times. If all attempts fail, the workflow reports a failure with page diagnostics
-and screenshots instead of claiming success.
-
-The schedule becomes active once the workflow is on the repository's default branch and GitHub
-Actions is enabled. Run **Actions → Daily dashboard visit → Run workflow** to test it manually.
-GitHub schedules can run late or be dropped under load, and scheduled workflows in inactive public
-repositories may be disabled after 60 days. This is a daily wake-up attempt, not an uptime guarantee.
+All automatic dashboard visits have been removed. To make a one-off cloud browser visit, use
+**Actions → Manual dashboard visit → Run workflow**. The workflow checks the dashboard's planet
+count and attempts to wake the app if needed; it has no scheduled triggers.
 
 For the repository's GitHub **About** settings, use this description and website:
 
