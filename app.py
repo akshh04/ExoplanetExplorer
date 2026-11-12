@@ -1,9 +1,12 @@
 """Exoplanet Explorer — an interactive dashboard over the NASA Exoplanet Archive."""
 
 import hashlib
+import html
 import inspect
+import logging
 import threading
 import time
+from datetime import datetime, timezone
 from io import StringIO
 
 import numpy as np
@@ -16,13 +19,17 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from streamlit.runtime.scriptrunner import add_script_run_ctx
 
+from data_contract import validate_archive_columns
+
+LOGGER = logging.getLogger("exoplanet_explorer")
+
 st.set_page_config(
     page_title="Exoplanet Explorer",
     layout="wide",
     page_icon="🪐",
-    # "auto" keeps the sidebar open on desktop but collapsed on phones,
-    # where 300px of filters would otherwise cover most of the screen.
-    initial_sidebar_state="auto",
+    # Keep the explorer as the first thing users see; filters remain available
+    # from the sidebar toggle when needed.
+    initial_sidebar_state="collapsed",
     menu_items={
         "About": (
             "Interactive exploration of the NASA Exoplanet Archive "
@@ -190,6 +197,48 @@ st.markdown(
         font-size: 1.05rem;
         opacity: 0.8;
         margin-top: -0.2rem;
+    }}
+    .exploration-brief {{
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.25rem;
+        margin: 0.2rem 0 1.1rem;
+        padding: 0.85rem 1rem;
+        border: 1px solid {BORDER};
+        border-radius: 12px;
+        background: linear-gradient(105deg, {CARD_BG}, transparent);
+    }}
+    .exploration-brief-copy {{
+        min-width: 0;
+    }}
+    .exploration-brief-title {{
+        font-size: 0.78rem;
+        font-weight: 750;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: {LINK_COLOR};
+        margin-bottom: 0.18rem;
+    }}
+    .exploration-brief-text {{
+        font-size: 0.94rem;
+        line-height: 1.45;
+        color: {TEXT_COLOR};
+    }}
+    .exploration-brief-meta {{
+        display: flex;
+        flex: 0 0 auto;
+        gap: 0.45rem;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }}
+    .exploration-brief-pill {{
+        padding: 0.3rem 0.58rem;
+        border-radius: 999px;
+        border: 1px solid {BORDER};
+        color: {MUTED_TEXT};
+        font-size: 0.76rem;
+        white-space: nowrap;
     }}
 
     /* Tabs a little roomier than the default. NOTE: Streamlit renders each
@@ -384,6 +433,15 @@ st.markdown(
             white-space: nowrap;
         }}
         .hero-sub {{ font-size: 0.92rem; }}
+        .exploration-brief {{
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 0.55rem;
+            margin-bottom: 0.9rem;
+        }}
+        .exploration-brief-meta {{
+            justify-content: flex-start;
+        }}
 
         /* Streamlit stacks columns on mobile by forcing min-width:100%, which
            turned 5 headline cards into 5 full-width slabs (and 8 profile ones
@@ -511,10 +569,44 @@ st.markdown(
 
         /* Tables: scroll inside their own box rather than stretching the page. */
         [data-testid="stDataFrame"] {{ max-width: 100%; overflow-x: auto; }}
+        [data-testid="stDataFrame"] > div {{
+            max-width: 100%;
+            overflow-x: auto;
+        }}
+
+        /* Plotly keeps the desktop figure height on narrow screens, which
+           makes the first chart dominate the phone viewport. Cap the canvas
+           itself rather than only its wrapper so the responsive SVG follows. */
+        [data-testid="stPlotlyChart"] {{
+            max-width: 100%;
+            overflow: hidden;
+        }}
+        [data-testid="stPlotlyChart"] .js-plotly-plot,
+        [data-testid="stPlotlyChart"] .plot-container,
+        [data-testid="stPlotlyChart"] .svg-container {{
+            height: min(390px, 108vw) !important;
+            max-height: 390px !important;
+        }}
+        [data-testid="stPlotlyChart"] .gl-container {{
+            height: min(410px, 114vw) !important;
+            max-height: 410px !important;
+        }}
 
         /* Full-width tap targets for the download/link buttons. */
         [data-testid="stDownloadButton"] button,
         [data-testid="stLinkButton"] a {{ width: 100%; }}
+
+        /* Keep filter controls comfortable for thumbs without letting the
+           sidebar consume the whole first screen. */
+        [data-testid="stSidebar"] [data-testid="stExpander"] summary {{
+            min-height: 44px;
+            display: flex;
+            align-items: center;
+        }}
+        [data-testid="stSidebar"] [data-baseweb="select"] > div,
+        [data-testid="stSidebar"] input {{
+            min-height: 44px;
+        }}
     }}
 
     /* Only the very narrowest phones need another step down; from ~360px up
@@ -748,13 +840,42 @@ def fetch_exoplanet_table(_sink=None) -> pd.DataFrame:
     from pscomppars
     """
     report(0.04, "Opening a connection to the archive…")
-    response = requests.get(
-        ARCHIVE_URL,
-        params={"query": query, "format": "csv"},
-        timeout=(10, 120),  # (connect, read) — without this the app can hang forever
-        stream=True,
-    )
-    response.raise_for_status()
+    response = None
+    for attempt in range(3):
+        try:
+            response = requests.get(
+                ARCHIVE_URL,
+                params={"query": query, "format": "csv"},
+                timeout=(10, 120),  # (connect, read) — without this the app can hang forever
+                stream=True,
+            )
+            response.raise_for_status()
+            break
+        except (requests.Timeout, requests.ConnectionError) as exc:
+            if attempt == 2:
+                LOGGER.exception("NASA archive request failed after %d attempts", attempt + 1)
+                raise
+            delay = 2 ** attempt
+            LOGGER.warning(
+                "NASA archive request failed on attempt %d; retrying in %ds: %s",
+                attempt + 1,
+                delay,
+                exc,
+            )
+            time.sleep(delay)
+        except requests.HTTPError as exc:
+            if response is None or response.status_code < 500 or attempt == 2:
+                LOGGER.exception("NASA archive returned an unrecoverable HTTP error")
+                raise
+            delay = 2 ** attempt
+            LOGGER.warning(
+                "NASA archive returned HTTP %s; retrying in %ds",
+                response.status_code,
+                delay,
+            )
+            time.sleep(delay)
+    if response is None:
+        raise RuntimeError("The NASA archive request did not produce a response.")
 
     # The server runs the query before it sends anything, so the first bytes
     # arrive several seconds in; that wait is covered by the step above.
@@ -780,6 +901,7 @@ def fetch_exoplanet_table(_sink=None) -> pd.DataFrame:
         raise RuntimeError(f"Archive returned an unexpected response: {text[:300]}")
 
     df = pd.read_csv(StringIO(text))
+    validate_archive_columns(df.columns)
     if df.empty:
         raise RuntimeError("The archive returned an empty table.")
 
@@ -1007,6 +1129,8 @@ with loader.container():
         st.stop()
 # Drops the whole loading block; a no-op when nothing was drawn.
 loader.empty()
+st.session_state.setdefault("data_loaded_at", datetime.now(timezone.utc))
+LOGGER.info("Dashboard data ready: %d planets", len(df))
 
 COLOR_MAP = method_colors(df[METHOD_SHORT].unique())
 YEAR_MIN, YEAR_MAX = int(df[YEAR].min()), int(df[YEAR].max())
@@ -1022,6 +1146,64 @@ FILTER_DEFAULTS = {
     "esi_floor": 0.0,
 }
 
+def _query_text(key: str) -> str | None:
+    """Read one scalar query parameter without trusting malformed URLs."""
+    value = st.query_params.get(key)
+    return value if isinstance(value, str) and value else None
+
+
+def _filters_from_query() -> dict:
+    """Decode shareable filters, falling back safely for invalid values."""
+    parsed = {}
+    year_text = _query_text("years")
+    if year_text and "-" in year_text:
+        try:
+            start, end = (int(part) for part in year_text.split("-", 1))
+            parsed["year_range"] = (start, end)
+        except ValueError:
+            pass
+    methods = _query_text("methods")
+    if methods:
+        parsed["methods"] = [item for item in methods.split(",") if item]
+    distance = _query_text("distance")
+    if distance:
+        try:
+            parsed["dist_limit"] = float(distance)
+        except ValueError:
+            pass
+    keep_unknown = _query_text("unknown")
+    if keep_unknown in {"0", "1"}:
+        parsed["keep_unknown_dist"] = keep_unknown == "1"
+    hz = _query_text("hz")
+    if hz:
+        parsed["hz_filter"] = [item for item in hz.split(",") if item]
+    esi = _query_text("esi")
+    if esi:
+        try:
+            parsed["esi_floor"] = float(esi)
+        except ValueError:
+            pass
+    return parsed
+
+
+def _sync_filters_to_query() -> None:
+    """Keep the current slice bookmarkable without adding default noise."""
+    params = {}
+    if tuple(st.session_state["year_range"]) != tuple(FILTER_DEFAULTS["year_range"]):
+        params["years"] = "-".join(str(value) for value in st.session_state["year_range"])
+    if st.session_state["methods"] != FILTER_DEFAULTS["methods"]:
+        params["methods"] = ",".join(st.session_state["methods"])
+    if st.session_state["dist_limit"] != FILTER_DEFAULTS["dist_limit"]:
+        params["distance"] = f'{st.session_state["dist_limit"]:.2f}'.rstrip("0").rstrip(".")
+    if st.session_state["keep_unknown_dist"] != FILTER_DEFAULTS["keep_unknown_dist"]:
+        params["unknown"] = "1" if st.session_state["keep_unknown_dist"] else "0"
+    if st.session_state["hz_filter"]:
+        params["hz"] = ",".join(st.session_state["hz_filter"])
+    if st.session_state["esi_floor"] > 0:
+        params["esi"] = f'{st.session_state["esi_floor"]:.2f}'
+    st.query_params.clear()
+    st.query_params.update(params)
+
 
 def reset_filters() -> None:
     """Restore every filter to its default.
@@ -1036,8 +1218,9 @@ def reset_filters() -> None:
 # Seed session state once, then build the widgets from `key` alone. Passing
 # both a `value=`/`default=` and a session-state entry makes Streamlit log a
 # warning on every rerun that follows a reset.
+_query_filters = _filters_from_query()
 for _key, _default in FILTER_DEFAULTS.items():
-    st.session_state.setdefault(_key, _default)
+    st.session_state.setdefault(_key, _query_filters.get(_key, _default))
 
 # A data refresh can move the bounds under stored state (a new discovery year,
 # a newly catalogued far-away planet), so re-fit what is already there.
@@ -1154,6 +1337,9 @@ if fdf.empty:
     st.warning("**No planets match the current filters.**")
     if detail:
         st.caption(f"Active filters: {detail}")
+    if st.button("Relax filters", type="primary"):
+        reset_filters()
+        st.rerun()
     st.info("Widen the filters in the sidebar, or press **Reset filters**, to continue.")
     st.stop()
 
@@ -1166,10 +1352,14 @@ hz_count = int(fdf[HZ_STATUS].isin(["Conservative", "Optimistic"]).sum())
 hz_conservative = int((fdf[HZ_STATUS] == "Conservative").sum())
 
 best_esi_label, best_esi_help = "—", "No planet in this selection has a published radius and temperature."
+best_esi_name = "no scored planet"
+best_esi_status = "unknown zone"
 if fdf[ESI].notna().any():
     best = fdf.loc[fdf[ESI].idxmax()]
     best_esi_label = f"{best[ESI]:.3f}"
     best_esi_help = f"{best[NAME]} — the closest match to Earth in this selection."
+    best_esi_name = html.escape(str(best[NAME]))
+    best_esi_status = html.escape(str(best[HZ_STATUS]).lower())
 
 metric_row = st.container(key="headline-metrics")
 m1, m2, m3, m4, m5 = metric_row.columns(5)
@@ -1208,6 +1398,39 @@ if active_filters:
         f"**{len(fdf):,}** of {len(df):,} planets · filtered by "
         + " · ".join(active_filters)
     )
+
+_sync_filters_to_query()
+freshness = st.session_state["data_loaded_at"].astimezone().strftime("%d %b %Y, %H:%M %Z")
+st.markdown(
+    f"""
+    <div class="exploration-brief">
+        <div class="exploration-brief-copy">
+            <div class="exploration-brief-title">Mission brief</div>
+            <div class="exploration-brief-text">
+                You are scanning <strong>{len(fdf):,}</strong> worlds across
+                <strong>{fdf[HOST].nunique():,}</strong> systems.
+                Start with <strong>{best_esi_name}</strong> — the closest
+                Earth match in this slice, with an ESI of
+                <strong>{best_esi_label}</strong>.
+            </div>
+        </div>
+        <div class="exploration-brief-meta">
+            <span class="exploration-brief-pill">NASA archive live</span>
+            <span class="exploration-brief-pill">Updated {freshness}</span>
+            <span class="exploration-brief-pill">Best match: {best_esi_status}</span>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+st.download_button(
+    "Download current selection",
+    data=fdf.to_csv(index=False).encode("utf-8"),
+    file_name="exoplanets_filtered.csv",
+    mime="text/csv",
+    width="stretch",
+    help="Export the exact filtered slice currently shown in the dashboard.",
+)
 
 st.divider()
 

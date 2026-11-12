@@ -26,6 +26,8 @@ Index help identify candidates for further study; they do not establish that a p
   progress bar with the real number of kilobytes received.
 - **Global filters** — discovery year, method, distance, habitable-zone class and a minimum Earth
   Similarity Index, all applied to every chart and table at once, with one-click reset.
+- **Shareable slices** — active filters are encoded in the URL, so a focused view can be bookmarked
+  or sent to someone else.
 - **Discovery trends** — per-year, cumulative, or share-of-year views broken down by discovery method.
 - **Size vs. orbit** — a log–log scatter of every world, with Mercury, Earth, Neptune and Jupiter
   overlaid for scale.
@@ -41,6 +43,10 @@ Index help identify candidates for further study; they do not establish that a p
 - **Head-to-head comparison** — set *Compare with* on the profile tab to put a second world beside
   the first, with Earth as a reference column across radius, mass, orbit, temperature, insolation,
   ESI and habitable-zone class.
+- **Mission brief** — a live summary turns the current filtered slice into a starting point, calling
+  out its size and the closest Earth match before you dive into the charts.
+- **Reliable exports** — download the exact filtered slice from the main view or the specialized
+  habitable-worlds table.
 
 Charts share a single colour scheme, so a given discovery method is the same colour everywhere. The
 tab bar sticks to the top while scrolling, and the chosen planet survives filter changes that do not
@@ -64,8 +70,16 @@ as a window is resized and treats a narrow desktop window the same as a phone.
 
 On a 375px screen this cut the distance from the top of the page to the navigation from roughly
 1070px to 674px, and the planet profile's eight measurements from about 990px of scrolling to 370px.
-The sidebar uses `initial_sidebar_state="auto"` so 300px of filters no longer cover a phone screen
-on load.
+The sidebar starts collapsed so the explorer is the first thing users see on every device; filters
+remain available from Streamlit's sidebar toggle.
+
+The mission brief reports the local time of the current data load. The NASA request retries transient
+network and server errors with exponential backoff, and a schema check fails clearly if the archive
+changes the selected response columns.
+
+Charts also use a mobile canvas cap (390px for standard plots, 410px for 3D) so a phone reaches the
+next section sooner instead of inheriting desktop-height figures. Tables remain horizontally scrollable
+inside their own frame, and sidebar controls keep 44px touch targets.
 
 **Navigation.** Six tabs ran to 704px inside a 343px strip, so the last two — one of them the planet
 profile — sat off-screen with nothing to signal they existed. On phones the tab strip becomes a
