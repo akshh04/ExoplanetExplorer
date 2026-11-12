@@ -8,6 +8,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from io import StringIO
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -1146,7 +1147,7 @@ FILTER_DEFAULTS = {
     "esi_floor": 0.0,
 }
 
-def _query_text(key: str) -> str | None:
+def _query_text(key: str) -> Optional[str]:
     """Read one scalar query parameter without trusting malformed URLs."""
     value = st.query_params.get(key)
     return value if isinstance(value, str) and value else None
@@ -1313,6 +1314,7 @@ if esi_floor > 0:
     # NaN >= x is False, so unscored planets drop out here by design.
     mask &= df[ESI] >= esi_floor
 fdf = df[mask].copy()
+_sync_filters_to_query()
 
 # Human-readable summary of everything currently narrowing the dataset.
 active_filters = []
@@ -1399,7 +1401,6 @@ if active_filters:
         + " · ".join(active_filters)
     )
 
-_sync_filters_to_query()
 freshness = st.session_state["data_loaded_at"].astimezone().strftime("%d %b %Y, %H:%M %Z")
 st.markdown(
     f"""
