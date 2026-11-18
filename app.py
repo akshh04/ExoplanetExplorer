@@ -180,13 +180,6 @@ st.markdown(
     .st-key-home-toolbar .st-key-open_filters button[kind] {{
         color: {FOCUS_RING} !important; border-color: {ACCENT_SOFT} !important;
     }}
-    .st-key-home-workspace [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] .st-key-home-rail) {{
-        display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem;
-    }}
-    .st-key-home-workspace [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] .st-key-home-rail) > [data-testid="stColumn"] {{
-        min-width: 0 !important; width: 100% !important;
-    }}
-    .st-key-home-discovery {{ display: none; }}
     .st-key-home-overview {{
         background: linear-gradient(120deg, {OVERVIEW_TINT}, {CARD_BG});
         border-color: {ACCENT_SOFT};
@@ -277,6 +270,7 @@ st.markdown(
         overflow: hidden; clip-path: inset(50%); white-space: nowrap;
     }}
     .catalogue-meta {{ color: {MUTED_TEXT} !important; font-size: 0.875rem; margin: 0; overflow-wrap: anywhere; }}
+    .catalogue-reading-label {{ display: none; }}
     .catalogue-zone {{ color: {MUTED_TEXT} !important; font-size: 0.8rem; margin: 0.35rem 0 0; }}
     .catalogue-zone.is-habitable {{
         display: inline-block; padding: 0.16rem 0.45rem; border-radius: 5px;
@@ -315,59 +309,68 @@ st.markdown(
     .st-key-explorer-navigation label:has(input:focus-visible) {{ outline: 2px solid {FOCUS_RING}; outline-offset: 2px; }}
     [data-testid="stButton"] button, [data-testid="stLinkButton"] a {{ min-height: 44px; border-radius: 10px; }}
     @media (min-width: 1100px) {{
-        [data-testid="stMainBlockContainer"]:has(.st-key-home-workspace) {{
+        [data-testid="stMainBlockContainer"]:has(.st-key-home-catalogue) {{
             max-width: none; padding-inline: clamp(2rem, 3.25vw, 4.5rem);
         }}
-        .st-key-home-workspace [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] .st-key-home-rail) {{
-            grid-template-columns: clamp(16.75rem, 23%, 22rem) minmax(0, 1fr);
-            gap: clamp(1.5rem, 2.75vw, 3.25rem);
-        }}
-        .st-key-home-overview .st-key-headline-metrics [data-testid="stHorizontalBlock"] {{
-            grid-template-columns: minmax(0, 1fr); gap: 0.55rem;
+        .st-key-home-catalogue {{ container: home-catalogue / inline-size; }}
+        .st-key-home-overview {{
+            border: 0; border-inline-start: 3px solid {ACCENT_SOFT};
+            padding: 0.8rem clamp(1rem, 2vw, 1.65rem);
         }}
         .st-key-home-overview .st-key-headline-metrics [data-testid="stColumn"] + [data-testid="stColumn"] {{
-            border-top: 1px solid {BORDER}; padding-top: 0.55rem;
+            border-inline-start: 1px solid {BORDER}; padding-inline-start: clamp(0.55rem, 1.25vw, 1.2rem);
         }}
         .st-key-home-overview [data-testid="stMetric"] > div {{
-            grid-template-columns: minmax(0, 1fr) auto; align-items: center;
-            gap: 0.2rem 0.75rem;
+            gap: 0.15rem;
         }}
-        .st-key-home-overview [data-testid="stMetricLabel"] {{ grid-column: 1; grid-row: 1; }}
         .st-key-home-overview [data-testid="stMetricValue"] {{
-            grid-column: 2; grid-row: 1; justify-self: end; font-size: 1.25rem;
-            font-variant-numeric: tabular-nums;
+            font-size: 1.5rem; font-variant-numeric: tabular-nums;
         }}
-        .st-key-home-overview [data-testid="stMetric"] > div > div:has([data-testid="stMetricDelta"]) {{
-            grid-column: 1 / -1; grid-row: 2; justify-self: start;
+        .st-key-home-catalogue-header {{
+            display: grid; grid-template-columns: auto minmax(0, 1fr);
+            align-items: center; gap: clamp(1.25rem, 3vw, 3rem);
         }}
-        .st-key-home-discovery {{ display: flex; }}
+        .st-key-home-catalogue-header h3 {{ padding-block: 0; }}
+        .st-key-home-toolbar [data-testid="stHorizontalBlock"] {{
+            align-items: center;
+        }}
         .st-key-home-toolbar [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {{
-            flex: 0 0 7.25rem;
+            flex: 0 0 7rem;
         }}
         .st-key-home-toolbar [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:first-child {{
             flex: 1 1 0;
         }}
-        .st-key-home-toolbar [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:last-child {{
-            display: none;
-        }}
         .st-key-home-catalogue .st-key-catalogue-results {{
-            grid-template-columns: minmax(0, 1fr); gap: 0;
-            border: 1px solid {BORDER}; border-radius: 12px; background: {CARD_BG};
+            grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.85rem;
         }}
-        .st-key-home-catalogue .st-key-catalogue-results [class*="st-key-planet-card-"] {{
-            grid-template-columns: minmax(8rem, 1fr) minmax(13rem, 2fr) auto;
-            grid-template-areas: "name details preview";
-            gap: 0.35rem 1rem; padding: 0.45rem 0.85rem;
-            border: 0; border-radius: 0; background: transparent;
+        .st-key-home-catalogue [class*="st-key-planet-card-"] {{
+            gap: 0.2rem 0.65rem; padding: 0.72rem 1rem 0.85rem;
+            align-content: start;
         }}
-        .st-key-home-catalogue .st-key-catalogue-results > [data-testid="stLayoutWrapper"] + [data-testid="stLayoutWrapper"] {{
-            border-top: 1px solid {BORDER};
+        .st-key-home-catalogue [class*="st-key-planet-card-"]:focus-within {{
+            border-color: {ACCENT_SOFT};
         }}
-        .st-key-home-catalogue .catalogue-details {{
-            display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
-            gap: 0.15rem 0.8rem;
+        .st-key-home-catalogue .catalogue-summary {{
+            display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.4rem 0.85rem;
         }}
-        .st-key-home-catalogue .catalogue-zone {{ margin: 0; }}
+        .st-key-home-catalogue .catalogue-host {{
+            grid-column: 1 / -1; padding-bottom: 0.55rem; border-bottom: 1px solid {BORDER};
+        }}
+        .st-key-home-catalogue .catalogue-separator,
+        .st-key-home-catalogue .catalogue-unknown-prefix {{ display: none; }}
+        .st-key-home-catalogue .catalogue-reading {{
+            display: grid; align-content: start; font-variant-numeric: tabular-nums;
+            color: {TEXT_COLOR}; font-weight: 550;
+        }}
+        .st-key-home-catalogue .catalogue-reading-label {{
+            display: block; font-size: 0.75rem; color: {MUTED_TEXT}; font-weight: 400;
+        }}
+        .st-key-home-catalogue .catalogue-zone {{ margin-top: 0.6rem; }}
+        @container home-catalogue (max-width: 880px) {{
+            .st-key-home-catalogue-header {{ grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }}
+            .st-key-home-catalogue .st-key-catalogue-results {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+        }}
     }}
     @media (max-width: 950px) {{
         .st-key-explorer-navigation .st-key-chart_view [role="radiogroup"] {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}
@@ -1462,12 +1465,6 @@ def render_guided_discoveries(source):
     st.caption("Choose Multi-planet systems under Options, then open a profile to compare the orbits.")
 
 
-def render_discovery_shortcuts(source):
-    for preset in ("Habitable candidates", "Nearby worlds", "Recent discoveries"):
-        st.button(preset, on_click=apply_preset, args=(preset,), width="stretch",
-                  key=f"preset-{source}-{preset}")
-
-
 def render_global_search():
     st.selectbox(
         "Find a planet", options=sorted(planet_names), index=None,
@@ -1746,36 +1743,30 @@ def render_selection_metrics():
 
 
 if view == "Explore":
-    with st.container(key="home-workspace"):
-        rail_col, catalogue_col = st.columns([1, 3])
-        home_rail = rail_col.container(key="home-rail")
-        home_catalogue = catalogue_col.container(key="home-catalogue")
-    with home_rail:
-        if not fdf.empty:
-            with st.container(key="home-overview", border=True, gap="xsmall"):
-                st.html('<h2 class="overview-heading">Selection overview</h2>')
-                render_selection_metrics()
-        with st.container(key="home-discovery", border=True, gap="xsmall"):
-            st.markdown("#### Discover")
-            render_discovery_shortcuts("rail")
-            with st.popover("Guided discoveries", width="stretch"):
-                render_guided_discoveries("rail")
+    if not fdf.empty:
+        with st.container(key="home-overview", border=True, gap="xsmall"):
+            st.html('<h2 class="overview-heading">Selection overview</h2>')
+            render_selection_metrics()
+    home_catalogue = st.container(key="home-catalogue")
     with home_catalogue:
-        st.subheader("Planet catalogue")
-        with st.container(key="home-toolbar"):
-            search_col, filter_col, options_col, discover_col = st.columns(
-                [5, 1.35, 1.3, 1.45], vertical_alignment="bottom",
-            )
-            with search_col:
-                home_query = catalogue_search(is_saved=False)
-            with filter_col:
-                filter_button()
-            home_options = options_col.popover("Options", width="stretch")
-            with discover_col.popover("Discover", width="stretch"):
-                st.markdown("**Discovery shortcuts**")
-                render_discovery_shortcuts("toolbar")
-                st.divider()
-                render_guided_discoveries("toolbar")
+        with st.container(key="home-catalogue-header"):
+            st.subheader("Planet catalogue")
+            with st.container(key="home-toolbar"):
+                search_col, filter_col, options_col, discover_col = st.columns(
+                    [5, 1.35, 1.3, 1.45], vertical_alignment="bottom",
+                )
+                with search_col:
+                    home_query = catalogue_search(is_saved=False)
+                with filter_col:
+                    filter_button()
+                home_options = options_col.popover("Options", width="stretch")
+                with discover_col.popover("Discover", width="stretch"):
+                    st.markdown("**Discovery shortcuts**")
+                    for preset in ("Habitable candidates", "Nearby worlds", "Recent discoveries"):
+                        st.button(preset, on_click=apply_preset, args=(preset,), width="stretch",
+                                  key=f"preset-toolbar-{preset}")
+                    st.divider()
+                    render_guided_discoveries("toolbar")
         if active_filters:
             with st.container(key="active-filters", horizontal=True, vertical_alignment="center", gap="medium"):
                 st.caption(" · ".join(active_filters))
@@ -1870,17 +1861,24 @@ def show_summary_card(planet, from_saved):
     name = planet[NAME]
     radius = measurement(planet[RADIUS] / radius_divisor, ".2f", f" R{size_suffix}")
     distance = measurement(planet[DISTANCE] * distance_factor, ",.1f", f" {distance_suffix}")
-    details = " · ".join((
-        str(planet[HOST]),
-        radius if radius != "—" else "Radius unknown",
-        distance if distance != "—" else "Distance unknown",
-    ))
+    readings = []
+    for label, value in (("Radius", radius), ("Distance", distance)):
+        display = (html.escape(value) if value != "—"
+                   else f'<span class="catalogue-unknown-prefix">{label} </span>unknown')
+        readings.append(
+            '<span class="catalogue-separator"> · </span>'
+            f'<span class="catalogue-reading"><span class="catalogue-reading-label">{label}</span>'
+            f'<span>{display}</span></span>'
+        )
     st.button(name, on_click=open_profile, args=(name, from_saved),
               key=f"card_open_{name}", type="tertiary")
     status = planet[HZ_STATUS]
     zone_class = "catalogue-zone is-habitable" if status in {"Conservative", "Optimistic"} else "catalogue-zone"
-    st.html(f'<div class="catalogue-details"><p class="catalogue-meta">{html.escape(details)}</p>'
-            f'<p class="{zone_class}">{zone_label(status)}</p></div>')
+    st.html(
+        '<div class="catalogue-details"><p class="catalogue-meta catalogue-summary">'
+        f'<span class="catalogue-host">{html.escape(str(planet[HOST]))}</span>{"".join(readings)}</p>'
+        f'<p class="{zone_class}">{zone_label(status)}</p></div>'
+    )
     st.button(f"Preview {name}", icon=":material/visibility:", help=f"Preview {name}",
               on_click=st.session_state.update, args=({"card_preview_planet": name},),
               key=f"card-preview-{name}", type="tertiary")

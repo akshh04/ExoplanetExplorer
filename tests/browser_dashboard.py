@@ -4,6 +4,7 @@ import csv
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -94,33 +95,51 @@ def check_dashboard(browser):
     expect(catalogue_search).to_have_value("Test Star 2")
 
     catalogue = page.locator(".st-key-home-catalogue")
-    rail = page.locator(".st-key-home-discovery")
-    for width in (320, 375, 768, 1024, 1280, 1440, 1920):
+    cards = catalogue.locator(".st-key-catalogue-results")
+    heading = catalogue.get_by_role("heading", name="Planet catalogue")
+    discover = catalogue.get_by_role("button", name="Discover", exact=True)
+    for width in (320, 375, 768, 1024, 1100, 1280, 1440, 1920):
         page.set_viewport_size({"width": width, "height": 900})
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), width
         expect(overview.get_by_test_id("stMetricValue")).to_have_count(5)
         expect(overview.get_by_text("Best Earth Similarity", exact=True)).to_be_visible()
         overview_box, catalogue_box = overview.bounding_box(), catalogue.bounding_box()
         assert overview_box is not None and catalogue_box is not None, width
+        assert catalogue_box["y"] >= overview_box["y"] + overview_box["height"], width
+        assert abs(overview_box["x"] - catalogue_box["x"]) <= 1, width
+        assert abs(overview_box["width"] - catalogue_box["width"]) <= 1, width
+        expect(discover).to_be_visible()
+        column_count = cards.evaluate("(node) => getComputedStyle(node).gridTemplateColumns.split(' ').length")
         if width >= 1100:
             assert overview_box["x"] < width * 0.08, (width, overview_box)
-            assert catalogue_box["x"] >= overview_box["x"] + overview_box["width"], width
-            assert catalogue_box["width"] > width * 0.60, (width, catalogue_box)
-            expect(rail.get_by_role("button", name="Nearby worlds")).to_be_visible()
-            expect(catalogue.get_by_role("button", name="Discover", exact=True)).not_to_be_visible()
+            assert catalogue_box["width"] > width * 0.90, (width, catalogue_box)
+            assert search_input.bounding_box()["x"] > heading.bounding_box()["x"] + heading.bounding_box()["width"], width
+            assert column_count == 3, width
+            expect(cards.locator(".catalogue-reading-label").first).to_be_visible()
         else:
-            assert catalogue_box["y"] >= overview_box["y"] + overview_box["height"], width
-            assert abs(overview_box["width"] - catalogue_box["width"]) <= 1, width
-            expect(rail).not_to_be_visible()
-            expect(catalogue.get_by_role("button", name="Discover", exact=True)).to_be_visible()
+            assert search_input.bounding_box()["y"] >= heading.bounding_box()["y"] + heading.bounding_box()["height"], width
+            assert column_count == (1 if width <= 640 else 2), width
+            expect(cards.locator(".catalogue-reading-label").first).not_to_be_visible()
         assert overview.get_by_test_id("stMetricDelta").locator("p").evaluate_all(
             "(elements) => elements.every(element => element.scrollWidth <= element.clientWidth)"
         ), width
         assert min(page.locator(".st-key-explorer-navigation [data-testid=stRadioOption]")
                    .evaluate_all("(nodes) => nodes.map(node => node.getBoundingClientRect().height)")) >= 44
-    rail.get_by_role("button", name="Guided discoveries", exact=True).click()
+    discover.click()
     expect(page.get_by_role("button", name="Explore short orbits", exact=True)).to_be_visible()
+    page.get_by_role("button", name="Nearby worlds", exact=True).click()
+    clear_filters = page.get_by_role("button", name="Clear all filters")
+    expect(clear_filters).to_be_visible()
     page.keyboard.press("Escape")
+    clear_filters.click()
+    expect(clear_filters).to_have_count(0)
+
+    page.set_viewport_size({"width": 1100, "height": 900})
+    page.get_by_test_id("stExpandSidebarButton").click()
+    expect(page.get_by_role("button", name="Refresh data from NASA")).to_be_visible()
+    expect(cards).to_have_css("grid-template-columns", re.compile(r"^\S+ \S+$"))
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.get_by_test_id("stSidebarCollapseButton").click()
     page.set_viewport_size({"width": 375, "height": 900})
     wait_for_render()
 

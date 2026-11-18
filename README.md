@@ -11,8 +11,8 @@ Parameters table from the [NASA Exoplanet Archive](https://exoplanetarchive.ipac
 1. In **Explore**, the **Selection overview** shows planets, planetary systems, habitable-zone
    candidates, the best Earth Similarity Index, and discoveries in the latest year in the selection.
    It updates with the global filters. The catalogue search narrows the displayed results.
-   On wider screens the overview and **Discover** sit to the left of the catalogue. On
-   tablets and phones the overview is above the catalogue, with **Discover** beside **Options**.
+   On wider screens the five stats share a single strip, and search and catalogue controls
+   sit beside the catalogue heading. On tablets and phones the controls sit below the heading.
 2. Search by planet name or host star. Select a planet name to open its profile, or use the eye
    button for a quick preview and comparison controls. Use **Filters** to narrow the selection.
    **Options** holds sorting, collections, table view, and search across the entire archive.
@@ -63,8 +63,9 @@ NASA data and is excluded from Git.
 
 Only the selected page renders. Large 3D and 2D views sample up to 2,500 eligible planets.
 The catalogue shows 12 planets per page with each planet’s host, radius, distance, and
-habitable-zone classification. Explore uses compact rows on wider screens and cards on
-tablets and phones. Table view lets you choose columns and open a planet from a selected row.
+habitable-zone classification. On wider screens Explore shows a three-column grid with
+labeled measurements. The grid uses fewer columns as space narrows. Table view lets you
+choose columns and open a planet from a selected row.
 
 ## Run locally
 

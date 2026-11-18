@@ -3,7 +3,7 @@
 | Area | What the dashboard offers |
 | --- | --- |
 | Phones and tablets | The selection overview sits above the catalogue. Search, filters, options, and Discover stay together above the planet cards. |
-| Laptop | Search and compact planet rows use the wider right side of Explore, with the five-stat overview and discovery shortcuts on the left. |
+| Laptop | A five-stat strip sits above a full-width catalogue, with a shared search toolbar and a grid of planet cards with labeled measurements. |
 | Catalogue controls | Configurable table columns, quick planet previews, keyboard shortcuts, and a comparison tray |
 | Exploration | Presets and guided searches under Discover, curated collections, 2D and 3D plots, a sky map, and facility timelines |
 | Profiles | Measurement coverage, uncertainty and source links, similar planets, a system schematic, and image exports |
