@@ -93,16 +93,36 @@ def check_dashboard(browser):
     page.get_by_role("button", name="Back to catalogue", exact=True).click()
     expect(catalogue_search).to_have_value("Test Star 2")
 
-    for width in (320, 375, 768, 1440):
+    catalogue = page.locator(".st-key-home-catalogue")
+    rail = page.locator(".st-key-home-discovery")
+    for width in (320, 375, 768, 1024, 1280, 1440, 1920):
         page.set_viewport_size({"width": width, "height": 900})
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), width
         expect(overview.get_by_test_id("stMetricValue")).to_have_count(5)
         expect(overview.get_by_text("Best Earth Similarity", exact=True)).to_be_visible()
+        overview_box, catalogue_box = overview.bounding_box(), catalogue.bounding_box()
+        assert overview_box is not None and catalogue_box is not None, width
+        if width >= 1100:
+            assert overview_box["x"] < width * 0.08, (width, overview_box)
+            assert catalogue_box["x"] >= overview_box["x"] + overview_box["width"], width
+            assert catalogue_box["width"] > width * 0.60, (width, catalogue_box)
+            expect(rail.get_by_role("button", name="Nearby worlds")).to_be_visible()
+            expect(catalogue.get_by_role("button", name="Discover", exact=True)).not_to_be_visible()
+        else:
+            assert catalogue_box["y"] >= overview_box["y"] + overview_box["height"], width
+            assert abs(overview_box["width"] - catalogue_box["width"]) <= 1, width
+            expect(rail).not_to_be_visible()
+            expect(catalogue.get_by_role("button", name="Discover", exact=True)).to_be_visible()
         assert overview.get_by_test_id("stMetricDelta").locator("p").evaluate_all(
             "(elements) => elements.every(element => element.scrollWidth <= element.clientWidth)"
         ), width
         assert min(page.locator(".st-key-explorer-navigation [data-testid=stRadioOption]")
                    .evaluate_all("(nodes) => nodes.map(node => node.getBoundingClientRect().height)")) >= 44
+    rail.get_by_role("button", name="Guided discoveries", exact=True).click()
+    expect(page.get_by_role("button", name="Explore short orbits", exact=True)).to_be_visible()
+    page.keyboard.press("Escape")
+    page.set_viewport_size({"width": 375, "height": 900})
+    wait_for_render()
 
     click_navigation("Charts")
     expect(page.get_by_role("heading", name="The pace of discovery")).to_be_visible()
@@ -125,8 +145,9 @@ def check_dashboard(browser):
     )
     click_navigation("Saved")
     expect(page.get_by_role("button", name="Test World 8 b", exact=True)).to_be_visible()
+    page.wait_for_function("new URLSearchParams(location.search).get('view') === 'Saved'")
     page.reload()
-    expect(page.get_by_role("button", name="Test World 8 b", exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="Test World 8 b", exact=True)).to_be_visible(timeout=20000)
     planets = ["Test World 8 b", "Test World 6 b", "Test World 7 b"]
     for index, planet in enumerate(planets):
         page.get_by_role("button", name=planet, exact=True).click()

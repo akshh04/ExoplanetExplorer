@@ -74,6 +74,9 @@ if not st.session_state.get("preferences_loaded") and browser.preferences is not
     st.session_state["preferences_loaded"] = True
     st.rerun()
 
+# Keep the route writer in the same location as the page controls change.
+browser_route = st.container(key="browser-route")
+
 # --- THEME ---------------------------------------------------------------
 # Streamlit's real theme (the one that also reskins native canvas-rendered
 # widgets like st.dataframe) can only be changed via .streamlit/config.toml,
@@ -164,7 +167,9 @@ _dark_overrides = f"""
 st.markdown(
     f"""
 <style>
-    .st-key-browser-state, .st-key-browser-route {{ display: none; }}
+    .st-key-browser-state, [data-testid="stLayoutWrapper"]:has(> .st-key-browser-route) {{
+        display: none;
+    }}
     .st-key-catalogue-preview {{ scroll-margin-top: 10rem; }}
     .st-key-catalogue-preview h4 {{ padding-top: 0; }}
     .st-key-results-controls p {{ margin-bottom: 0; }}
@@ -175,6 +180,13 @@ st.markdown(
     .st-key-home-toolbar .st-key-open_filters button[kind] {{
         color: {FOCUS_RING} !important; border-color: {ACCENT_SOFT} !important;
     }}
+    .st-key-home-workspace [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] .st-key-home-rail) {{
+        display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem;
+    }}
+    .st-key-home-workspace [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] .st-key-home-rail) > [data-testid="stColumn"] {{
+        min-width: 0 !important; width: 100% !important;
+    }}
+    .st-key-home-discovery {{ display: none; }}
     .st-key-home-overview {{
         background: linear-gradient(120deg, {OVERVIEW_TINT}, {CARD_BG});
         border-color: {ACCENT_SOFT};
@@ -212,8 +224,23 @@ st.markdown(
     .st-key-home-overview [data-testid="stColumn"]:nth-child(3) [data-testid="stMetricIcon"] {{
         color: {HABITABLE_ACCENT} !important;
     }}
+    .st-key-catalogue-results {{
+        display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem;
+    }}
     .st-key-catalogue-results [class*="st-key-planet-card-"] {{
+        display: grid; grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas: "name preview" "details details";
+        align-items: center; gap: 0.25rem 0.65rem;
         background: {CARD_BG}; border-color: {BORDER};
+    }}
+    .st-key-catalogue-results [class*="st-key-planet-card-"] > :first-child {{ grid-area: name; }}
+    .st-key-catalogue-results [class*="st-key-planet-card-"] > :nth-child(2) {{ grid-area: details; }}
+    .st-key-catalogue-results [class*="st-key-planet-card-"] > :last-child {{ grid-area: preview; }}
+    .st-key-catalogue-results [class*="st-key-planet-card-"] > * {{ min-width: 0; }}
+    .st-key-catalogue-results [class*="st-key-card-preview-"] {{ justify-self: end; }}
+    .st-key-home-catalogue .st-key-home-toolbar [data-testid="stColumn"] {{ min-width: 0; }}
+    .st-key-home-catalogue .st-key-home-toolbar [data-testid="stPopover"] button {{
+        white-space: nowrap;
     }}
     .st-key-catalogue-results [data-testid="stButton"] button[kind="tertiary"] {{
         justify-content: flex-start; padding: 0.25rem 0; text-align: left;
@@ -287,6 +314,61 @@ st.markdown(
     .st-key-explorer-navigation label:has(input:checked) p {{ color: {FOCUS_RING} !important; }}
     .st-key-explorer-navigation label:has(input:focus-visible) {{ outline: 2px solid {FOCUS_RING}; outline-offset: 2px; }}
     [data-testid="stButton"] button, [data-testid="stLinkButton"] a {{ min-height: 44px; border-radius: 10px; }}
+    @media (min-width: 1100px) {{
+        [data-testid="stMainBlockContainer"]:has(.st-key-home-workspace) {{
+            max-width: none; padding-inline: clamp(2rem, 3.25vw, 4.5rem);
+        }}
+        .st-key-home-workspace [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] .st-key-home-rail) {{
+            grid-template-columns: clamp(16.75rem, 23%, 22rem) minmax(0, 1fr);
+            gap: clamp(1.5rem, 2.75vw, 3.25rem);
+        }}
+        .st-key-home-overview .st-key-headline-metrics [data-testid="stHorizontalBlock"] {{
+            grid-template-columns: minmax(0, 1fr); gap: 0.55rem;
+        }}
+        .st-key-home-overview .st-key-headline-metrics [data-testid="stColumn"] + [data-testid="stColumn"] {{
+            border-top: 1px solid {BORDER}; padding-top: 0.55rem;
+        }}
+        .st-key-home-overview [data-testid="stMetric"] > div {{
+            grid-template-columns: minmax(0, 1fr) auto; align-items: center;
+            gap: 0.2rem 0.75rem;
+        }}
+        .st-key-home-overview [data-testid="stMetricLabel"] {{ grid-column: 1; grid-row: 1; }}
+        .st-key-home-overview [data-testid="stMetricValue"] {{
+            grid-column: 2; grid-row: 1; justify-self: end; font-size: 1.25rem;
+            font-variant-numeric: tabular-nums;
+        }}
+        .st-key-home-overview [data-testid="stMetric"] > div > div:has([data-testid="stMetricDelta"]) {{
+            grid-column: 1 / -1; grid-row: 2; justify-self: start;
+        }}
+        .st-key-home-discovery {{ display: flex; }}
+        .st-key-home-toolbar [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {{
+            flex: 0 0 7.25rem;
+        }}
+        .st-key-home-toolbar [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:first-child {{
+            flex: 1 1 0;
+        }}
+        .st-key-home-toolbar [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:last-child {{
+            display: none;
+        }}
+        .st-key-home-catalogue .st-key-catalogue-results {{
+            grid-template-columns: minmax(0, 1fr); gap: 0;
+            border: 1px solid {BORDER}; border-radius: 12px; background: {CARD_BG};
+        }}
+        .st-key-home-catalogue .st-key-catalogue-results [class*="st-key-planet-card-"] {{
+            grid-template-columns: minmax(8rem, 1fr) minmax(13rem, 2fr) auto;
+            grid-template-areas: "name details preview";
+            gap: 0.35rem 1rem; padding: 0.45rem 0.85rem;
+            border: 0; border-radius: 0; background: transparent;
+        }}
+        .st-key-home-catalogue .st-key-catalogue-results > [data-testid="stLayoutWrapper"] + [data-testid="stLayoutWrapper"] {{
+            border-top: 1px solid {BORDER};
+        }}
+        .st-key-home-catalogue .catalogue-details {{
+            display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+            gap: 0.15rem 0.8rem;
+        }}
+        .st-key-home-catalogue .catalogue-zone {{ margin: 0; }}
+    }}
     @media (max-width: 950px) {{
         .st-key-explorer-navigation .st-key-chart_view [role="radiogroup"] {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}
         .st-key-home-overview .st-key-headline-metrics [data-testid="stHorizontalBlock"] {{
@@ -310,6 +392,7 @@ st.markdown(
         .st-key-home-overview [data-testid="stMetricLabel"] span:has(> span > [data-testid="stMetricIcon"]) {{
             display: none;
         }}
+        .st-key-catalogue-results {{ grid-template-columns: minmax(0, 1fr); }}
         [role="dialog"] {{ max-width: 100vw !important; }}
     }}
     @media (max-width: 360px) {{
@@ -1269,7 +1352,7 @@ def _sync_filters_to_query() -> None:
     if st.session_state["comparison_tray"]:
         params["tray"] = json.dumps(st.session_state["comparison_tray"], ensure_ascii=False, separators=(",", ":"))
     st.session_state["route_params"] = params
-    with st.container(key="browser-route"):
+    with browser_route:
         route_writer(
             key="route_writer",
             data={"params": params, "replace": route_visit,
@@ -1368,14 +1451,21 @@ def apply_preset(preset):
     st.session_state["active_view"] = "Explore"
 
 
-def render_guided_discoveries():
+def render_guided_discoveries(source):
     st.markdown("**Shorter than Mercury**")
     st.caption("Find a planet with an orbit shorter than Mercury’s 87.97-day year.")
-    st.button("Explore short orbits", on_click=apply_preset, args=("Short years",))
+    st.button("Explore short orbits", on_click=apply_preset, args=("Short years",),
+              key=f"short-orbits-{source}")
     st.markdown("**Look for neighbours**")
     st.caption("Nearby worlds uses a distance limit of 50 parsecs.")
     st.markdown("**Explore a multi-planet system**")
     st.caption("Choose Multi-planet systems under Options, then open a profile to compare the orbits.")
+
+
+def render_discovery_shortcuts(source):
+    for preset in ("Habitable candidates", "Nearby worlds", "Recent discoveries"):
+        st.button(preset, on_click=apply_preset, args=(preset,), width="stretch",
+                  key=f"preset-{source}-{preset}")
 
 
 def render_global_search():
@@ -1656,30 +1746,40 @@ def render_selection_metrics():
 
 
 if view == "Explore":
-    if not fdf.empty:
-        with st.container(key="home-overview", border=True, gap="xsmall"):
-            st.html('<h2 class="overview-heading">Selection overview</h2>')
-            render_selection_metrics()
-    st.subheader("Planet catalogue")
-    with st.container(key="home-toolbar"):
-        search_col, filter_col, options_col, discover_col = st.columns(
-            [5, 1.35, 1.3, 1.45], vertical_alignment="bottom",
-        )
-        with search_col:
-            home_query = catalogue_search(is_saved=False)
-        with filter_col:
-            filter_button()
-        home_options = options_col.popover("Options", width="stretch")
-        with discover_col.popover("Discover", width="stretch"):
-            st.markdown("**Discovery shortcuts**")
-            for preset in ("Habitable candidates", "Nearby worlds", "Recent discoveries"):
-                st.button(preset, on_click=apply_preset, args=(preset,), width="stretch")
-            st.divider()
-            render_guided_discoveries()
-    if active_filters:
-        with st.container(key="active-filters", horizontal=True, vertical_alignment="center", gap="medium"):
-            st.caption(" · ".join(active_filters))
-            st.button("Clear all filters", on_click=reset_filters, type="tertiary")
+    with st.container(key="home-workspace"):
+        rail_col, catalogue_col = st.columns([1, 3])
+        home_rail = rail_col.container(key="home-rail")
+        home_catalogue = catalogue_col.container(key="home-catalogue")
+    with home_rail:
+        if not fdf.empty:
+            with st.container(key="home-overview", border=True, gap="xsmall"):
+                st.html('<h2 class="overview-heading">Selection overview</h2>')
+                render_selection_metrics()
+        with st.container(key="home-discovery", border=True, gap="xsmall"):
+            st.markdown("#### Discover")
+            render_discovery_shortcuts("rail")
+            with st.popover("Guided discoveries", width="stretch"):
+                render_guided_discoveries("rail")
+    with home_catalogue:
+        st.subheader("Planet catalogue")
+        with st.container(key="home-toolbar"):
+            search_col, filter_col, options_col, discover_col = st.columns(
+                [5, 1.35, 1.3, 1.45], vertical_alignment="bottom",
+            )
+            with search_col:
+                home_query = catalogue_search(is_saved=False)
+            with filter_col:
+                filter_button()
+            home_options = options_col.popover("Options", width="stretch")
+            with discover_col.popover("Discover", width="stretch"):
+                st.markdown("**Discovery shortcuts**")
+                render_discovery_shortcuts("toolbar")
+                st.divider()
+                render_guided_discoveries("toolbar")
+        if active_filters:
+            with st.container(key="active-filters", horizontal=True, vertical_alignment="center", gap="medium"):
+                st.caption(" · ".join(active_filters))
+                st.button("Clear all filters", on_click=reset_filters, type="tertiary")
 else:
     with st.container(key="results-controls"):
         filter_col, count_col = st.columns([1, 3], vertical_alignment="center")
@@ -1702,8 +1802,9 @@ if view == "Profile" and not fdf.empty:
 _sync_filters_to_query()
 
 if fdf.empty and view not in {"Saved", "Learn"}:
-    st.warning("**No planets match the current filters.**")
-    st.button("Relax filters", type="primary", on_click=reset_filters)
+    message_area = home_catalogue if view == "Explore" else st
+    message_area.warning("**No planets match the current filters.**")
+    message_area.button("Relax filters", type="primary", on_click=reset_filters)
     if view != "Explore":
         st.stop()
 
@@ -1774,17 +1875,15 @@ def show_summary_card(planet, from_saved):
         radius if radius != "—" else "Radius unknown",
         distance if distance != "—" else "Distance unknown",
     ))
-    with st.container(gap="xsmall", horizontal=True, wrap=False,
-                      horizontal_alignment="distribute", vertical_alignment="center"):
-        st.button(name, on_click=open_profile, args=(name, from_saved),
-                  key=f"card_open_{name}", type="tertiary")
-        st.button(f"Preview {name}", icon=":material/visibility:", help=f"Preview {name}",
-                  on_click=st.session_state.update, args=({"card_preview_planet": name},),
-                  key=f"card-preview-{name}", type="tertiary")
+    st.button(name, on_click=open_profile, args=(name, from_saved),
+              key=f"card_open_{name}", type="tertiary")
     status = planet[HZ_STATUS]
     zone_class = "catalogue-zone is-habitable" if status in {"Conservative", "Optimistic"} else "catalogue-zone"
-    st.html(f'<p class="catalogue-meta">{html.escape(details)}</p>'
-            f'<p class="{zone_class}">{zone_label(status)}</p>')
+    st.html(f'<div class="catalogue-details"><p class="catalogue-meta">{html.escape(details)}</p>'
+            f'<p class="{zone_class}">{zone_label(status)}</p></div>')
+    st.button(f"Preview {name}", icon=":material/visibility:", help=f"Preview {name}",
+              on_click=st.session_state.update, args=({"card_preview_planet": name},),
+              key=f"card-preview-{name}", type="tertiary")
 
 
 @st.dialog("Report a problem")
@@ -1804,7 +1903,8 @@ if feedback_requested and not st.session_state.get("filter_dialog_open"):
 
 tray = st.session_state["comparison_tray"]
 if tray and view in {"Explore", "Saved", "Profile"}:
-    with st.container(border=True, key="compare-tray"):
+    comparison_area = home_catalogue if view == "Explore" else st
+    with comparison_area.container(border=True, key="compare-tray"):
         st.caption(f"Comparison · {len(tray)} of {COMPARISON_LIMIT} planets")
         st.write(" · ".join(tray))
         if view == "Profile":
@@ -1817,8 +1917,7 @@ if tray and view in {"Explore", "Saved", "Profile"}:
                           key=f"tray_remove_{name}")
             st.button("Clear comparison", on_click=lambda: st.session_state.update(comparison_tray=[]))
 
-if view in {"Explore", "Saved"}:
-    is_saved = view == "Saved"
+def render_catalogue(is_saved, home_query="", home_options=None):
     page_key = "saved_page" if is_saved else "catalogue_page"
     search_key = "saved_search" if is_saved else "catalogue_search"
     reset_page = {"on_change": change_page, "args": (page_key, 0)}
@@ -1893,11 +1992,9 @@ if view in {"Explore", "Saved"}:
             st.session_state[page_key] = page
             start = page * page_size
             with st.container(key="catalogue-results"):
-                for offset in range(start, min(start + page_size, len(catalogue)), 2):
-                    cards = st.columns(2)
-                    for col, (_, planet_row) in zip(cards, catalogue.iloc[offset:offset + 2].iterrows()):
-                        with col.container(key=f"planet-card-{planet_row[NAME]}", border=True, gap="xxsmall"):
-                            show_summary_card(planet_row, is_saved)
+                for _, planet_row in catalogue.iloc[start:start + page_size].iterrows():
+                    with st.container(key=f"planet-card-{planet_row[NAME]}", border=True, gap="xxsmall"):
+                        show_summary_card(planet_row, is_saved)
             if last_page:
                 previous, position, next_page = st.columns(3, vertical_alignment="center")
                 previous.button("Previous", disabled=page == 0, on_click=change_page, args=(page_key, page - 1))
@@ -1955,6 +2052,14 @@ if view in {"Explore", "Saved"}:
                 st.rerun()
     freshness = datetime.fromisoformat(str(df.attrs["fetched_at"])).strftime("%d %b %Y, %H:%M UTC")
     st.caption(f"NASA archive · Fetched {freshness}")
+
+
+if view == "Explore":
+    with home_catalogue:
+        render_catalogue(False, home_query, home_options)
+elif view == "Saved":
+    render_catalogue(True)
+
 
 def chart_table(frame, label="View chart data"):
     panel = st.expander(label, on_change="rerun")
@@ -2939,7 +3044,7 @@ if st.session_state["active_view"] == "Profile":
 if st.session_state["active_view"] == "Learn":
     st.subheader("A field guide to other worlds")
     with st.expander("Guided discoveries"):
-        render_guided_discoveries()
+        render_guided_discoveries("learn")
 
     st.markdown("You don’t need an astronomy degree to explore. Start with these essentials.")
     for title, explanation in [
