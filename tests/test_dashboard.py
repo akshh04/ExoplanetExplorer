@@ -166,6 +166,29 @@ class DashboardTests(unittest.TestCase):
         self.click("Clear search")
         self.assertEqual(self.app.text_input(key="catalogue_search").value, "")
 
+    def test_home_overview_tracks_filters_without_using_catalogue_search(self):
+        self.run_app()
+        metrics = {metric.label: metric.value for metric in self.app.metric}
+        self.assertEqual(
+            metrics,
+            {
+                "Planets shown": "24",
+                "Planetary systems": "8",
+                "In the habitable zone": "6",
+                "Best Earth Similarity": "0.973",
+                "Discovered in 2023": "1",
+            },
+        )
+        self.app.text_input(key="catalogue_search").set_value("Test Star 0")
+        self.run_app()
+        self.assertEqual(self.planet_count(), "3 planets")
+        self.assertEqual(self.app.metric[0].value, "24")
+        self.click("Nearby worlds")
+        self.assertEqual(self.app.metric[0].value, "6")
+        self.assertEqual(self.app.metric[1].value, "2")
+        self.click("Clear all filters")
+        self.assertEqual(self.app.metric[0].value, "24")
+
     def test_comparison_permalink_keeps_order_and_ignores_invalid_entries(self):
         planets = [f"Test World {index} b" for index in range(6, 10)]
         self.app.query_params.update({

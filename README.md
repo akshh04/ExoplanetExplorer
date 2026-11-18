@@ -8,19 +8,22 @@ Parameters table from the [NASA Exoplanet Archive](https://exoplanetarchive.ipac
 
 ## Using the dashboard
 
-1. In **Explore**, search by planet name or host star and select a planet card to open its profile.
-2. Use **Filters** to narrow the catalogue by discovery year, method, distance, habitability, or
-   measurement coverage. Open **Options** for sorting, collections, table view, discovery shortcuts,
-   or a search across the entire archive.
+1. In **Explore**, the **Selection overview** shows planets, planetary systems, habitable-zone
+   candidates, the best Earth Similarity Index, and discoveries in the latest year in the selection.
+   It updates with the global filters. The catalogue search narrows the results below it.
+2. Search by planet name or host star. Select a planet name to open its profile, or use the eye
+   button for a quick preview and comparison controls. Use **Filters** to narrow the selection.
+   **Options** holds sorting, collections, table view, and search across the entire archive.
+   **Discover** has presets and guided searches, including the short-orbit example.
 3. Open **Charts** for discovery trends, size and orbit, statistical clusters, 2D and 3D plots,
    habitable-zone candidates, and a sky map. **Learn** explains the measurements and methods.
 4. Save planets to browser-local collections, or add up to four planets to compare with Earth.
    The comparison URL preserves the selection. Export the measurements as CSV or the displayed
    comparison as an image.
 
-Press **/** to focus search or **F** to open filters when focus is outside a form. Expand the
-sidebar for saved filters, CSV export, data refresh, and **Display preferences** for dark mode
-and units. The browser remembers preferences and saved planets between visits.
+Press **/** to focus search or **F** to open filters when focus is outside a form. Use the
+**Dark** switch next to the title. Expand the sidebar for saved filters, CSV export, data
+refresh, and unit preferences. The browser remembers preferences and saved planets between visits.
 
 ## Science and interpretation
 
@@ -57,8 +60,9 @@ stored as a compressed, validated snapshot at `.cache/archive.json.gz`. Set
 NASA data and is excluded from Git.
 
 Only the selected page renders. Large 3D and 2D views sample up to 2,500 eligible planets.
-The catalogue shows eight cards per page. Table view lets you choose columns and open a
-planet from a selected row.
+The catalogue shows 12 cards per page with each planet’s host, radius, distance, and
+habitable-zone classification. Table view lets you choose columns and open a planet from a
+selected row.
 
 ## Run locally
 

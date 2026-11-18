@@ -41,7 +41,14 @@ def check_dashboard(browser):
     wait_for_render()
     expect(page.get_by_test_id("catalogue-count")).to_have_text("24 planets")
     expect(page.get_by_role("combobox", name="Find a planet")).not_to_be_visible()
-    expect(page.get_by_role("heading", name="Planet preview")).to_have_count(0)
+    overview = page.locator(".st-key-home-overview")
+    expect(overview.get_by_test_id("stMetric")).to_have_count(5)
+    expect(overview.get_by_text("In the habitable zone", exact=True)).to_be_visible()
+    expect(page.get_by_role("dialog", name="Planet preview")).to_have_count(0)
+    page.get_by_role("button", name="Discover", exact=True).click()
+    expect(page.get_by_role("button", name="Explore short orbits")).to_be_visible()
+    expect(page.get_by_role("button", name="Nearby worlds")).to_be_visible()
+    page.keyboard.press("Escape")
     page.get_by_role("button", name="Options", exact=True).click()
     expect(page.get_by_role("combobox", name="Sort planets")).to_be_visible()
     expect(page.get_by_role("combobox", name="Find a planet")).to_be_visible()
@@ -71,6 +78,16 @@ def check_dashboard(browser):
     catalogue_search.press("Enter")
     expect(page.get_by_role("button", name="Test World 8 b", exact=True)).to_be_visible()
     expect(page.get_by_role("button", name="Test World 3 b", exact=True)).to_have_count(0)
+    page.get_by_role("button", name="Preview Test World 8 b", exact=True).click()
+    preview = page.get_by_role("dialog", name="Planet preview")
+    expect(preview.get_by_role("heading", name="Test World 8 b")).to_be_visible()
+    expect(preview.get_by_text("Earth similarity", exact=True)).to_be_visible()
+    preview.get_by_role("button", name="Add to comparison", exact=True).click()
+    expect(preview.get_by_role("button", name="Remove from comparison", exact=True)).to_be_visible()
+    preview.get_by_role("button", name="Remove from comparison", exact=True).click()
+    expect(preview.get_by_role("button", name="Add to comparison", exact=True)).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(preview).to_have_count(0)
     page.get_by_role("button", name="Test World 8 b", exact=True).click()
     expect(page.get_by_role("heading", name="Individual planet profile")).to_be_visible()
     page.get_by_role("button", name="Back to catalogue", exact=True).click()
@@ -79,6 +96,11 @@ def check_dashboard(browser):
     for width in (320, 375, 768, 1440):
         page.set_viewport_size({"width": width, "height": 900})
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), width
+        expect(overview.get_by_test_id("stMetricValue")).to_have_count(5)
+        expect(overview.get_by_text("Best Earth Similarity", exact=True)).to_be_visible()
+        assert overview.get_by_test_id("stMetricDelta").locator("p").evaluate_all(
+            "(elements) => elements.every(element => element.scrollWidth <= element.clientWidth)"
+        ), width
         assert min(page.locator(".st-key-explorer-navigation [data-testid=stRadioOption]")
                    .evaluate_all("(nodes) => nodes.map(node => node.getBoundingClientRect().height)")) >= 44
 
@@ -102,9 +124,9 @@ def check_dashboard(browser):
         "JSON.parse(localStorage.getItem('exoplanet-explorer.preferences.v1')).favorites.includes('Test World 8 b')",
     )
     click_navigation("Saved")
-    expect(page.get_by_role("button", name="Test World 8 b")).to_be_visible()
+    expect(page.get_by_role("button", name="Test World 8 b", exact=True)).to_be_visible()
     page.reload()
-    expect(page.get_by_role("button", name="Test World 8 b")).to_be_visible()
+    expect(page.get_by_role("button", name="Test World 8 b", exact=True)).to_be_visible()
     planets = ["Test World 8 b", "Test World 6 b", "Test World 7 b"]
     for index, planet in enumerate(planets):
         page.get_by_role("button", name=planet, exact=True).click()

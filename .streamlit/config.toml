@@ -1,4 +1,4 @@
-# Default Streamlit theme. The app offers dark mode under Display preferences.
+# Default Streamlit theme. The app offers a Dark switch next to the title.
 [theme]
 base = "light"
 primaryColor = "#7c3aed"

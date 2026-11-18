@@ -96,6 +96,7 @@ if IS_DARK:
     ACCENT_SOFT, SHADOW = "rgba(167,139,250,0.55)", "rgba(0,0,0,0.45)"
     HOVER_TINT, FOCUS_RING = "rgba(230,237,243,0.07)", "#a78bfa"
     LINK_COLOR = "#7dd3fc"
+    OVERVIEW_TINT, HABITABLE_ACCENT, HABITABLE_TINT = "#1c1730", "#5eead4", "#15312e"
 else:
     PAGE_BG, SIDEBAR_BG, CARD_BG = "#ffffff", "#f7f8fb", "#ffffff"
     TEXT_COLOR, MUTED_TEXT, BORDER = "#31333f", "#5c6470", "rgba(49,51,63,0.16)"
@@ -104,6 +105,7 @@ else:
     ACCENT_SOFT, SHADOW = "rgba(124,58,237,0.45)", "rgba(15,23,42,0.10)"
     HOVER_TINT, FOCUS_RING = "rgba(49,51,63,0.05)", "#7c3aed"
     LINK_COLOR = "#0284c7"
+    OVERVIEW_TINT, HABITABLE_ACCENT, HABITABLE_TINT = "#f7f3ff", "#0f766e", "#e6f6f3"
 
 _dark_overrides = f"""
     html, body, .stApp, [data-testid="stHeader"], [data-testid="stAppViewContainer"] {{
@@ -122,6 +124,7 @@ _dark_overrides = f"""
     [data-testid="stMetric"] {{ background-color: {CARD_BG} !important; border-color: {BORDER} !important; }}
     [data-testid="stMetricLabel"] p {{ color: {MUTED_TEXT} !important; }}
     [data-testid="stMetricValue"], [data-testid="stMetricDelta"] {{ color: {TEXT_COLOR} !important; }}
+    .st-key-home-overview [data-testid="stMetricDelta"] {{ background: #2b3141 !important; }}
     [data-baseweb="select"] > div, [data-baseweb="input"] > div, [data-baseweb="base-input"],
     textarea, input[type="text"] {{
         background-color: {INPUT_BG} !important;
@@ -137,6 +140,7 @@ _dark_overrides = f"""
         color: {TEXT_COLOR} !important;
     }}
     [data-testid="stTooltipIcon"] button {{ color: {MUTED_TEXT} !important; }}
+    .st-key-home-overview [data-testid="stTooltipIcon"] svg {{ stroke: {MUTED_TEXT} !important; }}
     [data-testid="stDataFrame"] canvas {{ filter: invert(0.9) hue-rotate(180deg); }}
     [role="option"]:hover, [role="option"][data-focused="true"] {{ background-color: #334155 !important; }}
     [data-baseweb="tag"] {{ background-color: #334155 !important; }}
@@ -167,7 +171,50 @@ st.markdown(
     [data-testid="stMainBlockContainer"]:has(.st-key-home-toolbar) {{ max-width: 1120px; padding-top: 2.75rem; }}
     .st-key-home-toolbar [data-baseweb="input"] {{ min-height: 44px; }}
     .st-key-home-toolbar [data-testid="stPopover"] button {{ min-height: 44px; }}
-    .st-key-catalogue-results [data-testid="stVerticalBlockBorderWrapper"] {{ border-color: {BORDER}; }}
+    .hero-title .brand-accent {{ color: {FOCUS_RING} !important; }}
+    .st-key-home-toolbar .st-key-open_filters button[kind] {{
+        color: {FOCUS_RING} !important; border-color: {ACCENT_SOFT} !important;
+    }}
+    .st-key-home-overview {{
+        background: linear-gradient(120deg, {OVERVIEW_TINT}, {CARD_BG});
+        border-color: {ACCENT_SOFT};
+    }}
+    .st-key-home-overview .overview-heading {{
+        font-size: 1.1rem; font-weight: 650; padding: 0; margin: 0; line-height: 1.25;
+    }}
+    .st-key-home-overview .st-key-headline-metrics [data-testid="stHorizontalBlock"] {{
+        display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.6rem;
+    }}
+    .st-key-home-overview .st-key-headline-metrics [data-testid="stColumn"] {{
+        min-width: 0 !important; width: 100% !important;
+    }}
+    .st-key-home-overview [data-testid="stMetric"] {{
+        height: auto; min-height: 0; padding: 0; border: 0;
+        background: transparent !important;
+    }}
+    .st-key-home-overview [data-testid="stMetric"]:hover {{ transform: none; box-shadow: none; }}
+    .st-key-home-overview [data-testid="stMetric"] > div {{
+        grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; align-items: start;
+    }}
+    .st-key-home-overview [data-testid="stMetricLabel"] p {{
+        white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.3;
+    }}
+    .st-key-home-overview [data-testid="stMetricValue"] {{ font-size: clamp(1.35rem, 2.5vw, 1.85rem); }}
+    .st-key-home-overview [data-testid="stMetric"] > div > div:has([data-testid="stMetricDelta"]) {{
+        grid-column: 1; grid-row: 3;
+    }}
+    .st-key-home-overview [data-testid="stMetricDelta"] p {{
+        white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere;
+    }}
+    .st-key-home-overview [data-testid="stMetricIcon"] {{
+        color: {FOCUS_RING} !important;
+    }}
+    .st-key-home-overview [data-testid="stColumn"]:nth-child(3) [data-testid="stMetricIcon"] {{
+        color: {HABITABLE_ACCENT} !important;
+    }}
+    .st-key-catalogue-results [class*="st-key-planet-card-"] {{
+        background: {CARD_BG}; border-color: {BORDER};
+    }}
     .st-key-catalogue-results [data-testid="stButton"] button[kind="tertiary"] {{
         justify-content: flex-start; padding: 0.25rem 0; text-align: left;
         font-size: 1.05rem; font-weight: 650;
@@ -187,7 +234,27 @@ st.markdown(
     .st-key-catalogue-results button[kind="tertiary"] p {{
         font-size: 1.05rem; font-weight: 650; overflow-wrap: anywhere;
     }}
+    .st-key-catalogue-results [class*="st-key-card-preview-"] button[kind="tertiary"] {{
+        min-width: 44px; justify-content: center; border-radius: 10px;
+        background: {OVERVIEW_TINT} !important;
+    }}
+    .st-key-catalogue-results [class*="st-key-card-preview-"] button[kind="tertiary"] > div,
+    .st-key-catalogue-results [class*="st-key-card-preview-"] button[kind="tertiary"] [data-has-shortcut] {{
+        width: auto;
+    }}
+    .st-key-catalogue-results [class*="st-key-card-preview-"] button [data-testid="stIconMaterial"] {{
+        color: {FOCUS_RING} !important;
+    }}
+    .st-key-catalogue-results [class*="st-key-card-preview-"] button p {{
+        position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+        overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+    }}
     .catalogue-meta {{ color: {MUTED_TEXT} !important; font-size: 0.875rem; margin: 0; overflow-wrap: anywhere; }}
+    .catalogue-zone {{ color: {MUTED_TEXT} !important; font-size: 0.8rem; margin: 0.35rem 0 0; }}
+    .catalogue-zone.is-habitable {{
+        display: inline-block; padding: 0.16rem 0.45rem; border-radius: 5px;
+        background: {HABITABLE_TINT}; color: {HABITABLE_ACCENT} !important;
+    }}
     [data-testid="stPlotlyChart"] {{ padding-top: 1.75rem; }}
     [data-testid="stPlotlyChart"] .modebar {{ top: -1.5rem !important; }}
     .stApp, [data-testid="stAppViewContainer"] {{ background: {PAGE_BG}; }}
@@ -222,6 +289,9 @@ st.markdown(
     [data-testid="stButton"] button, [data-testid="stLinkButton"] a {{ min-height: 44px; border-radius: 10px; }}
     @media (max-width: 950px) {{
         .st-key-explorer-navigation .st-key-chart_view [role="radiogroup"] {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}
+        .st-key-home-overview .st-key-headline-metrics [data-testid="stHorizontalBlock"] {{
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }}
     }}
     @media (max-width: 640px) {{
         [data-testid="stMainBlockContainer"]:has(.st-key-home-toolbar) {{ padding-top: 2.25rem; }}
@@ -230,7 +300,20 @@ st.markdown(
         .st-key-home-toolbar [data-testid="stHorizontalBlock"] {{ flex-wrap: wrap; gap: 0.5rem; }}
         .st-key-home-toolbar [data-testid="stColumn"] {{ min-width: 0 !important; flex: 1 1 0 !important; }}
         .st-key-home-toolbar [data-testid="stColumn"]:first-child {{ flex-basis: 100% !important; }}
+        .st-key-site-heading [data-testid="stHorizontalBlock"] {{ flex-wrap: nowrap; gap: 0.65rem; }}
+        .st-key-site-heading [data-testid="stColumn"] {{ min-width: 0 !important; }}
+        .st-key-site-heading [data-testid="stColumn"]:last-child {{ flex: 0 0 5.25rem !important; }}
+        .st-key-site-heading [data-testid="stToggle"] p {{ font-size: 0.8rem; }}
+        .st-key-home-overview .st-key-headline-metrics [data-testid="stHorizontalBlock"] {{
+            gap: 0.75rem;
+        }}
+        .st-key-home-overview [data-testid="stMetricLabel"] span:has(> span > [data-testid="stMetricIcon"]) {{
+            display: none;
+        }}
         [role="dialog"] {{ max-width: 100vw !important; }}
+    }}
+    @media (max-width: 360px) {{
+        .st-key-site-heading .hero-title {{ font-size: 1.38rem !important; }}
     }}
     /* Metric cards. NOTE: the test id is `stMetric`, not `metric-container`. */
     [data-testid="stMetric"] {{
@@ -957,10 +1040,13 @@ CHART_H_3D = 520
 
 
 # --- HEADER --------------------------------------------------------------
-st.html(
-    '<header><h1 class="hero-title">Exoplanet Explorer</h1>'
-    f'<p class="hero-sub">Confirmed planets from the <a href="{ARCHIVE_HOME}">NASA Exoplanet Archive</a>.</p></header>'
-)
+with st.container(key="site-heading"):
+    brand, theme = st.columns([5, 1.5], vertical_alignment="center")
+    brand.html(
+        '<header><h1 class="hero-title">Exoplanet <span class="brand-accent">Explorer</span></h1>'
+        f'<p class="hero-sub">Confirmed planets from the <a href="{ARCHIVE_HOME}">NASA Exoplanet Archive</a>.</p></header>'
+    )
+    theme.toggle("Dark", key="dark_mode")
 
 
 def load_with_progress():
@@ -1209,6 +1295,7 @@ def reset_filters() -> None:
 _query_filters = _filters_from_query()
 if route_visit:
     st.session_state["route_initialized"] = True
+    st.session_state.pop("card_preview_planet", None)
     st.session_state.update({
         key: _query_filters.get(key, default) for key, default in FILTER_DEFAULTS.items()
     })
@@ -1250,6 +1337,7 @@ def open_profile(name, clear_filters=False):
     """Keep the current selection when opening a planet from it."""
     if clear_filters:
         reset_filters()
+    st.session_state.pop("card_preview_planet", None)
     current_view = st.session_state["active_view"]
     if current_view != "Profile":
         st.session_state["profile_return_view"] = "Saved" if current_view == "Saved" else "Explore"
@@ -1278,6 +1366,16 @@ def apply_preset(preset):
         st.session_state["orbit_period_limit"] = 87.97
         return
     st.session_state["active_view"] = "Explore"
+
+
+def render_guided_discoveries():
+    st.markdown("**Shorter than Mercury**")
+    st.caption("Find a planet with an orbit shorter than Mercury’s 87.97-day year.")
+    st.button("Explore short orbits", on_click=apply_preset, args=("Short years",))
+    st.markdown("**Look for neighbours**")
+    st.caption("Nearby worlds uses a distance limit of 50 parsecs.")
+    st.markdown("**Explore a multi-planet system**")
+    st.caption("Choose Multi-planet systems under Options, then open a profile to compare the orbits.")
 
 
 def render_global_search():
@@ -1408,7 +1506,6 @@ with st.sidebar:
         st.text_input("Filter set name", key="filter_name", max_chars=40)
         st.button("Save filter set", on_click=save_filter_set)
     with st.expander("Display preferences"):
-        st.toggle("Dark mode", key="dark_mode")
         st.radio("Distance", list(DISTANCE_SCALE), key="distance_unit", horizontal=True)
         st.radio("Planet size and mass", list(SIZE_SCALE), key="size_unit", horizontal=True)
     st.button("Refresh data from NASA", width="stretch", on_click=refresh_archive)
@@ -1492,6 +1589,7 @@ if live_filters["complete_only"]:
 def change_page(page_key, page):
     st.session_state[page_key] = page
     st.session_state.pop("preview_planet", None)
+    st.session_state.pop("card_preview_planet", None)
 
 
 def catalogue_search(is_saved):
@@ -1510,17 +1608,78 @@ def filter_button():
               help="Keyboard shortcut: F", width="stretch")
 
 
+def render_selection_metrics():
+    latest_year = int(fdf[YEAR].max())
+    this_year = int((fdf[YEAR] == latest_year).sum())
+    prev_year = int((fdf[YEAR] == latest_year - 1).sum())
+
+    hz_count = int(fdf[HZ_STATUS].isin(["Conservative", "Optimistic"]).sum())
+    hz_conservative = int((fdf[HZ_STATUS] == "Conservative").sum())
+
+    best_esi_label, best_esi_help = "—", "No planet in this selection has a published radius and temperature."
+    if fdf[ESI].notna().any():
+        best = fdf.loc[fdf[ESI].idxmax()]
+        best_esi_label = f"{best[ESI]:.3f}"
+        best_esi_help = f"{best[NAME]} — the closest match to Earth in this selection."
+
+    metric_row = st.container(key="headline-metrics")
+    m1, m2, m3, m4, m5 = metric_row.columns(5)
+    m1.metric(
+        "Planets shown",
+        f"{len(fdf):,}",
+        delta=(f"{len(fdf) - len(df):,} from filters" if len(fdf) < len(df) else None),
+        delta_color="off",
+        delta_arrow="off",
+        help=f"Out of {len(df):,} confirmed planets in the archive.",
+        icon=":material/public:",
+    )
+    m2.metric("Planetary systems", f"{fdf[HOST].nunique():,}",
+              help="Distinct host stars in the current selection.",
+              icon=":material/hub:")
+    m3.metric(
+        "In the habitable zone",
+        f"{hz_count:,}",
+        delta=f"{hz_conservative:,} conservative" if hz_conservative else None,
+        delta_color="off",
+        delta_arrow="off",
+        help=HZ_HELP,
+        icon=":material/water_drop:",
+    )
+    m4.metric("Best Earth Similarity", best_esi_label, help=best_esi_help,
+              icon=":material/star:")
+    m5.metric(
+        f"Discovered in {latest_year}",
+        f"{this_year:,}",
+        delta=f"{this_year - prev_year:+,} vs {latest_year - 1}" if prev_year else None,
+        icon=":material/trending_up:",
+    )
+
+
 if view == "Explore":
+    if not fdf.empty:
+        with st.container(key="home-overview", border=True, gap="xsmall"):
+            st.html('<h2 class="overview-heading">Selection overview</h2>')
+            render_selection_metrics()
     st.subheader("Planet catalogue")
     with st.container(key="home-toolbar"):
-        search_col, filter_col, options_col = st.columns([6, 1.35, 1.25], vertical_alignment="bottom")
+        search_col, filter_col, options_col, discover_col = st.columns(
+            [5, 1.35, 1.3, 1.45], vertical_alignment="bottom",
+        )
         with search_col:
             home_query = catalogue_search(is_saved=False)
         with filter_col:
             filter_button()
         home_options = options_col.popover("Options", width="stretch")
+        with discover_col.popover("Discover", width="stretch"):
+            st.markdown("**Discovery shortcuts**")
+            for preset in ("Habitable candidates", "Nearby worlds", "Recent discoveries"):
+                st.button(preset, on_click=apply_preset, args=(preset,), width="stretch")
+            st.divider()
+            render_guided_discoveries()
     if active_filters:
-        st.caption(" · ".join(active_filters))
+        with st.container(key="active-filters", horizontal=True, vertical_alignment="center", gap="medium"):
+            st.caption(" · ".join(active_filters))
+            st.button("Clear all filters", on_click=reset_filters, type="tertiary")
 else:
     with st.container(key="results-controls"):
         filter_col, count_col = st.columns([1, 3], vertical_alignment="center")
@@ -1548,53 +1707,9 @@ if fdf.empty and view not in {"Saved", "Learn"}:
     if view != "Explore":
         st.stop()
 
-# --- HEADLINE METRICS ----------------------------------------------------
-if not fdf.empty and view in CHART_VIEWS:
-    latest_year = int(fdf[YEAR].max())
-    this_year = int((fdf[YEAR] == latest_year).sum())
-    prev_year = int((fdf[YEAR] == latest_year - 1).sum())
-
-    hz_count = int(fdf[HZ_STATUS].isin(["Conservative", "Optimistic"]).sum())
-    hz_conservative = int((fdf[HZ_STATUS] == "Conservative").sum())
-
-    best_esi_label, best_esi_help = "—", "No planet in this selection has a published radius and temperature."
-    if fdf[ESI].notna().any():
-        best = fdf.loc[fdf[ESI].idxmax()]
-        best_esi_label = f"{best[ESI]:.3f}"
-        best_esi_help = f"{best[NAME]} — the closest match to Earth in this selection."
-
-    with st.expander("Selection overview", expanded=False):
-        metric_row = st.container(key="headline-metrics")
-        m1, m2, m3, m4, m5 = metric_row.columns(5)
-        m1.metric(
-            "Planets shown",
-            f"{len(fdf):,}",
-            delta=(f"{len(fdf) - len(df):,} from filters" if len(fdf) < len(df) else None),
-            delta_color="off",
-            delta_arrow="off",
-            help=f"Out of {len(df):,} confirmed planets in the archive.",
-            icon=":material/public:",
-        )
-        m2.metric("Planetary systems", f"{fdf[HOST].nunique():,}",
-                  help="Distinct host stars in the current selection.",
-                  icon=":material/hub:")
-        m3.metric(
-            "In the habitable zone",
-            f"{hz_count:,}",
-            delta=f"{hz_conservative:,} conservative" if hz_conservative else None,
-            delta_color="off",
-            delta_arrow="off",
-            help=HZ_HELP,
-            icon=":material/water_drop:",
-        )
-        m4.metric("Best Earth Similarity", best_esi_label, help=best_esi_help,
-                  icon=":material/star:")
-        m5.metric(
-            f"Discovered in {latest_year}",
-            f"{this_year:,}",
-            delta=f"{this_year - prev_year:+,} vs {latest_year - 1}" if prev_year else None,
-            icon=":material/trending_up:",
-        )
+if not fdf.empty and view in {*CHART_VIEWS, "Profile"}:
+    with st.expander("Selection overview"):
+        render_selection_metrics()
 
 if active_filters and view != "Explore":
     st.button("Clear all filters", on_click=reset_filters, key="clear_active_filters")
@@ -1624,18 +1739,52 @@ def open_comparison():
     st.session_state["profile_rival"] = selected[1] if len(selected) > 1 else None
 
 
+def dismiss_card_preview():
+    st.session_state.pop("card_preview_planet", None)
+
+
+def render_planet_preview(planet, from_saved):
+    name = planet[NAME]
+    st.subheader(name)
+    st.caption(f"{planet[HOST]} · {int(planet[YEAR])} · {planet[METHOD]}")
+    st.write(zone_label(planet[HZ_STATUS]))
+    st.metric("Earth similarity", measurement(planet[ESI], ".3f"))
+    if st.button("Open full profile", type="primary"):
+        open_profile(name, clear_filters=from_saved)
+        st.rerun()
+    tray = st.session_state["comparison_tray"]
+    selected = name in tray
+    if st.button("Remove from comparison" if selected else "Add to comparison",
+                 disabled=not selected and len(tray) >= COMPARISON_LIMIT):
+        enqueue_comparison(name)
+        st.rerun()
+
+
+@st.dialog("Planet preview", on_dismiss=dismiss_card_preview)
+def card_preview(planet, from_saved):
+    render_planet_preview(planet, from_saved)
+
+
 def show_summary_card(planet, from_saved):
     name = planet[NAME]
     radius = measurement(planet[RADIUS] / radius_divisor, ".2f", f" R{size_suffix}")
     distance = measurement(planet[DISTANCE] * distance_factor, ",.1f", f" {distance_suffix}")
-    details = [str(planet[HOST])]
-    if radius != "—":
-        details.append(radius)
-    if distance != "—":
-        details.append(distance)
-    st.button(name, icon=":material/arrow_forward:", on_click=open_profile, args=(name, from_saved),
-              key=f"card_open_{name}", type="tertiary", width="stretch")
-    st.html(f'<p class="catalogue-meta">{html.escape(" · ".join(details))}</p>')
+    details = " · ".join((
+        str(planet[HOST]),
+        radius if radius != "—" else "Radius unknown",
+        distance if distance != "—" else "Distance unknown",
+    ))
+    with st.container(gap="xsmall", horizontal=True, wrap=False,
+                      horizontal_alignment="distribute", vertical_alignment="center"):
+        st.button(name, on_click=open_profile, args=(name, from_saved),
+                  key=f"card_open_{name}", type="tertiary")
+        st.button(f"Preview {name}", icon=":material/visibility:", help=f"Preview {name}",
+                  on_click=st.session_state.update, args=({"card_preview_planet": name},),
+                  key=f"card-preview-{name}", type="tertiary")
+    status = planet[HZ_STATUS]
+    zone_class = "catalogue-zone is-habitable" if status in {"Conservative", "Optimistic"} else "catalogue-zone"
+    st.html(f'<p class="catalogue-meta">{html.escape(details)}</p>'
+            f'<p class="{zone_class}">{zone_label(status)}</p>')
 
 
 @st.dialog("Report a problem")
@@ -1649,7 +1798,8 @@ def feedback():
 
 with st.sidebar:
     st.button("Report a problem", on_click=lambda: st.session_state.update(show_feedback=True))
-if st.session_state.pop("show_feedback", False) and not st.session_state.get("filter_dialog_open"):
+feedback_requested = st.session_state.pop("show_feedback", False)
+if feedback_requested and not st.session_state.get("filter_dialog_open"):
     feedback()
 
 tray = st.session_state["comparison_tray"]
@@ -1723,12 +1873,6 @@ if view in {"Explore", "Saved"}:
     if not is_saved:
         with home_options:
             st.divider()
-            st.markdown("**Discovery shortcuts**")
-            for preset in ("Habitable candidates", "Nearby worlds", "Recent discoveries"):
-                st.button(preset, on_click=apply_preset, args=(preset,), width="stretch")
-            if active_filters:
-                st.button("Clear all filters", on_click=reset_filters, width="stretch")
-            st.divider()
             render_global_search()
     if sort_by == "Latest publications":
         sort_control.caption("Discovery publication date from NASA. Catalogue release dates are listed separately in Trends.")
@@ -1743,7 +1887,7 @@ if view in {"Explore", "Saved"}:
         st.html(f'<p class="catalogue-meta" role="status" data-testid="catalogue-count">'
                 f'{len(catalogue):,} {"planet" if len(catalogue) == 1 else "planets"}</p>')
         if layout == "Cards":
-            page_size = 8
+            page_size = 12
             last_page = (len(catalogue) - 1) // page_size
             page = min(last_page, max(0, st.session_state.get(page_key, 0)))
             st.session_state[page_key] = page
@@ -1752,13 +1896,20 @@ if view in {"Explore", "Saved"}:
                 for offset in range(start, min(start + page_size, len(catalogue)), 2):
                     cards = st.columns(2)
                     for col, (_, planet_row) in zip(cards, catalogue.iloc[offset:offset + 2].iterrows()):
-                        with col.container(border=True, gap="xxsmall"):
+                        with col.container(key=f"planet-card-{planet_row[NAME]}", border=True, gap="xxsmall"):
                             show_summary_card(planet_row, is_saved)
             if last_page:
                 previous, position, next_page = st.columns(3, vertical_alignment="center")
                 previous.button("Previous", disabled=page == 0, on_click=change_page, args=(page_key, page - 1))
                 position.caption(f"Page {page + 1} of {last_page + 1}")
                 next_page.button("Next", disabled=page == last_page, on_click=change_page, args=(page_key, page + 1))
+            preview_name = st.session_state.get("card_preview_planet")
+            if preview_name and not (feedback_requested or st.session_state.get("filter_dialog_open")):
+                matching = catalogue[catalogue[NAME] == preview_name]
+                if not matching.empty:
+                    card_preview(matching.iloc[0], is_saved)
+                else:
+                    dismiss_card_preview()
         else:
             columns = [RADIUS, MASS, DISTANCE, YEAR, ESI, HZ_STATUS]
             with (st.expander("Table columns") if is_saved else home_options):
@@ -1787,16 +1938,8 @@ if view in {"Explore", "Saved"}:
             selected_name = st.session_state.get("preview_planet")
             matched = catalogue[catalogue[NAME] == selected_name]
             if not matched.empty:
-                row = matched.iloc[0]
                 with st.container(border=True, key="catalogue-preview"):
-                    st.markdown(f"#### {row[NAME]}")
-                    st.caption(f"{row[HOST]} · {int(row[YEAR])} · {row[METHOD]} · {zone_label(row[HZ_STATUS])}")
-                    st.button("Open full profile", type="primary", on_click=open_profile,
-                              args=(row[NAME], is_saved))
-                    selected = row[NAME] in tray
-                    st.button("Remove from comparison" if selected else "Add to comparison",
-                              on_click=enqueue_comparison, args=(row[NAME],),
-                              disabled=not selected and len(tray) >= COMPARISON_LIMIT)
+                    render_planet_preview(matched.iloc[0], is_saved)
             else:
                 st.caption("Select a row to open its profile.")
     if is_saved and st.session_state["favorites"]:
@@ -2796,8 +2939,7 @@ if st.session_state["active_view"] == "Profile":
 if st.session_state["active_view"] == "Learn":
     st.subheader("A field guide to other worlds")
     with st.expander("Guided discoveries"):
-        st.markdown("Find a planet with an orbit shorter than Mercury’s 87.97-day year.")
-        st.button("Explore short orbits", on_click=apply_preset, args=("Short years",))
+        render_guided_discoveries()
 
     st.markdown("You don’t need an astronomy degree to explore. Start with these essentials.")
     for title, explanation in [
