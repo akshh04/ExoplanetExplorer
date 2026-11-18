@@ -1,4 +1,5 @@
 """Dashboard interactions against explicitly synthetic archive data; no network needed."""
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -139,6 +140,40 @@ class DashboardTests(unittest.TestCase):
         self.run_app()
         self.assertTrue(any('No published radius' in e.value for e in self.app.info))
         self.assertEqual(self.app.selectbox(key='profile_pick').value, 'Test World 23 b')
+
+    def test_catalogue_host_search_keeps_context_after_opening_a_profile(self):
+        self.run_app()
+        self.click("Next")
+        self.app.text_input(key="catalogue_search").set_value("test star 2")
+        self.run_app()
+        cards = {button.label for button in self.app.button if button.label.startswith("Open Test World")}
+        self.assertEqual(cards, {"Open Test World 6 b", "Open Test World 7 b", "Open Test World 8 b"})
+        self.click("Open Test World 8 b")
+        self.assertEqual(self.app.selectbox(key="profile_pick").value, "Test World 8 b")
+        self.click("Back to catalogue")
+        self.assertEqual(self.app.text_input(key="catalogue_search").value, "test star 2")
+        self.assertTrue(any(button.label == "Open Test World 8 b" for button in self.app.button))
+        self.app.text_input(key="catalogue_search").set_value("No matching system")
+        self.run_app()
+        self.assertTrue(any("No planets match this search" in item.value for item in self.app.info))
+        self.click("Clear search")
+        self.assertEqual(self.app.text_input(key="catalogue_search").value, "")
+
+    def test_comparison_permalink_keeps_order_and_ignores_invalid_entries(self):
+        planets = [f"Test World {index} b" for index in range(6, 10)]
+        self.app.query_params.update({
+            "view": "Profile", "planet": planets[0], "compare": planets[1],
+            "tray": json.dumps([planets[0], planets[0], {}, "Unknown planet", *planets[1:], "Test World 10 b"]),
+        })
+        self.run_app()
+        self.assertEqual(json.loads(self.app.session_state["route_params"]["tray"]), planets)
+        next(radio for radio in self.app.radio if radio.label == "Comparison layout").set_value("All planets")
+        self.run_app()
+        comparison = next(table.value for table in self.app.dataframe if "Measure" in table.value.columns)
+        self.assertEqual(comparison.columns.tolist(), ["Measure", "Earth", *planets])
+        self.assertIn("Habitable zone", comparison["Measure"].tolist())
+        self.click(f"Remove {planets[3]} from comparison")
+        self.assertEqual(json.loads(self.app.session_state["route_params"]["tray"]), planets[:3])
 
 
 if __name__ == '__main__':

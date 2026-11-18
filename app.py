@@ -3,6 +3,7 @@
 import hashlib
 import html
 import inspect
+import json
 import logging
 import threading
 import time
@@ -171,6 +172,9 @@ st.markdown(
     .st-key-browser-state, .st-key-browser-route {{ display: none; }}
     .st-key-catalogue-preview {{ scroll-margin-top: 10rem; }}
     .st-key-catalogue-preview h4 {{ padding-top: 0; }}
+    [class*="st-key-card-actions-"] [data-testid="stHorizontalBlock"] {{ flex-wrap: nowrap; gap: 0.5rem; }}
+    [class*="st-key-card-actions-"] [data-testid="stColumn"] {{ min-width: 0 !important; flex: 1 1 0 !important; }}
+    [class*="st-key-card-actions-"] button {{ overflow-wrap: anywhere; }}
     .st-key-results-controls p {{ margin-bottom: 0; }}
     [data-testid="stPlotlyChart"] {{ padding-top: 1.75rem; }}
     [data-testid="stPlotlyChart"] .modebar {{ top: -1.5rem !important; }}
@@ -1162,6 +1166,7 @@ FILTER_DEFAULTS = {
 VIEWS = ["Explore", "Saved", "Trends", "Orbits", "Classes", "3D", "Habitable", "Sky", "Profile", "Learn"]
 CORE_COLUMNS = [RADIUS, MASS, PERIOD, TEMP, DISTANCE, SEMI_MAJOR]
 CORE_LABELS = ["Radius", "Mass", "Orbital period", "Equilibrium temperature", "Distance", "Semi-major axis"]
+COMPARISON_LIMIT = 4
 DISTANCE_SCALE = {"Light-years": 3.26156, "Parsecs": 1.0}
 DISTANCE_SUFFIX = {"Light-years": "ly", "Parsecs": "pc"}
 SIZE_SCALE = {"Earth": (1.0, 1.0, "⊕"), "Jupiter": (11.209, 317.828, "♃")}
@@ -1191,6 +1196,21 @@ def _query_text(key: str) -> Optional[str]:
     """Read one scalar query parameter without trusting malformed URLs."""
     value = route_query.get(key)
     return value if isinstance(value, str) and value else None
+
+
+def _comparison_from_query() -> list[str]:
+    """Read the shared tray in order, keeping only known, unique planet names."""
+    encoded = _query_text("tray")
+    if not encoded:
+        return []
+    try:
+        names = json.loads(encoded)
+    except (ValueError, RecursionError):
+        return []
+    if not isinstance(names, list):
+        return []
+    known_names = dict.fromkeys(name for name in names if isinstance(name, str) and name in planet_names)
+    return list(known_names)[:COMPARISON_LIMIT]
 
 
 def _filters_from_query() -> dict:
@@ -1250,13 +1270,15 @@ def _sync_filters_to_query() -> None:
         params["planet"] = st.session_state["profile_pick"]
     if st.session_state.get("profile_rival") in planet_names:
         params["compare"] = st.session_state["profile_rival"]
+    if st.session_state["comparison_tray"]:
+        params["tray"] = json.dumps(st.session_state["comparison_tray"], ensure_ascii=False, separators=(",", ":"))
     st.session_state["route_params"] = params
     with st.container(key="browser-route"):
         route_writer(
             key="route_writer",
             data={"params": params, "replace": route_visit,
                   "managed": ["years", "methods", "distance", "unknown", "hz",
-                              "esi", "complete", "view", "planet", "compare"]},
+                              "esi", "complete", "view", "planet", "compare", "tray"]},
         )
 
 
@@ -1281,11 +1303,15 @@ if route_visit:
         key: _query_filters.get(key, default) for key, default in FILTER_DEFAULTS.items()
     })
     st.session_state["active_view"] = _query_text("view") or "Explore"
+    st.session_state["comparison_tray"] = _comparison_from_query()
     for state_key, parameter in [("profile_pick", "planet"), ("profile_rival", "compare")]:
         st.session_state[state_key] = _query_text(parameter)
 else:
     for _key, _default in FILTER_DEFAULTS.items():
         st.session_state.setdefault(_key, _default)
+    st.session_state["comparison_tray"] = [
+        name for name in st.session_state.get("comparison_tray", []) if name in planet_names
+    ]
 st.session_state.update(st.session_state.pop("pending_filters", {}))
 
 # A data refresh can move the bounds under stored state (a new discovery year,
@@ -1304,7 +1330,8 @@ if st.session_state["active_view"] not in VIEWS:
     st.session_state["active_view"] = "Explore"
 # Keep profile selections when their widgets are absent from the current page.
 for _state_key in ("active_view", "profile_pick", "profile_rival", "orbit_period_limit",
-                   "catalogue_sort", "catalogue_collection", "catalogue_columns"):
+                   "catalogue_sort", "catalogue_collection", "catalogue_columns",
+                   "catalogue_search", "saved_search", "saved_collection"):
     if _state_key in st.session_state:
         st.session_state[_state_key] = st.session_state[_state_key]
 
@@ -1313,6 +1340,9 @@ def open_profile(name, clear_filters=False):
     """Keep the current selection when opening a planet from it."""
     if clear_filters:
         reset_filters()
+    current_view = st.session_state["active_view"]
+    if current_view != "Profile":
+        st.session_state["profile_return_view"] = "Saved" if current_view == "Saved" else "Explore"
     st.session_state["profile_pick"] = name
     st.session_state["highlighted_planet"] = name
     st.session_state["active_view"] = "Profile"
@@ -1491,7 +1521,9 @@ with st.container(key="explorer-navigation"):
         st.radio("Chart view", CHART_VIEWS, key="chart_view", horizontal=True,
                  label_visibility="collapsed", width="stretch", on_change=navigate_chart)
     if view == "Profile":
-        st.button("Back to catalogue", on_click=lambda: st.session_state.update(active_view="Explore"))
+        return_view = st.session_state.get("profile_return_view", "Explore")
+        return_label = "Back to saved planets" if return_view == "Saved" else "Back to catalogue"
+        st.button(return_label, on_click=lambda: st.session_state.update(active_view=return_view))
 
 year_range = live_filters["year_range"]
 selected_methods = live_filters["methods"]
@@ -1626,8 +1658,8 @@ with st.sidebar:
         file_name="exoplanets_filtered.csv", mime="text/csv", width="stretch",
     )
 
-def change_page(offset):
-    st.session_state["catalogue_page"] += offset
+def change_page(page_key, page):
+    st.session_state[page_key] = page
     st.session_state.pop("preview_planet", None)
 
 
@@ -1636,31 +1668,38 @@ def preview_planet(name):
 
 
 def enqueue_comparison(name):
-    tray = st.session_state.get("comparison_tray", [])
+    tray = st.session_state["comparison_tray"]
     if name in tray:
         st.session_state["comparison_tray"] = [planet for planet in tray if planet != name]
-    elif len(tray) < 4:
+    elif len(tray) < COMPARISON_LIMIT:
         st.session_state["comparison_tray"] = [*tray, name]
 
 
 def open_comparison():
     selected = st.session_state["comparison_tray"]
     open_profile(selected[0], clear_filters=True)
-    st.session_state["profile_rival"] = selected[1]
+    st.session_state["profile_rival"] = selected[1] if len(selected) > 1 else None
 
 
-def show_summary_card(planet, key):
+def show_summary_card(planet, from_saved):
     name = planet[NAME]
     status = planet[HZ_STATUS]
     radius = measurement(planet[RADIUS] / radius_divisor, ".2f", f" R{size_suffix}")
     distance = measurement(planet[DISTANCE] * distance_factor, ",.1f", f" {distance_suffix}")
+    radius_text = f"Radius {radius}" if radius != "—" else "Radius unknown"
+    distance_text = f"{distance} away" if distance != "—" else "Distance unknown"
     st.html(
         f'<h4>{html.escape(name)}</h4>'
         f'<p class="profile-sub">{html.escape(str(planet[HOST]))}</p>'
-        f'<p>{radius} radius · {distance} away</p>'
+        f'<p>{radius_text} · {distance_text}</p>'
         f'<p><span class="profile-chip chip-{hz_slug(status)}">{zone_label(status)}</span></p>'
     )
-    st.button(f"Preview {name}", on_click=preview_planet, args=(name,), key=key, width="stretch")
+    with st.container(key=f"card-actions-{name}"):
+        direct, preview = st.columns(2)
+        direct.button(f"Open {name}", on_click=open_profile, args=(name, from_saved),
+                      key=f"card_open_{name}", type="primary", width="stretch")
+        preview.button(f"Preview {name}", on_click=preview_planet, args=(name,),
+                       key=f"card_preview_{name}", width="stretch")
 
 
 @st.dialog("Report a problem")
@@ -1677,6 +1716,21 @@ with st.sidebar:
 if st.session_state.pop("show_feedback", False) and not st.session_state.get("filter_dialog_open"):
     feedback()
 
+tray = st.session_state["comparison_tray"]
+if tray and view in {"Explore", "Saved", "Profile"}:
+    with st.container(border=True, key="compare-tray"):
+        st.caption(f"Comparison · {len(tray)} of {COMPARISON_LIMIT} planets")
+        st.write(" · ".join(tray))
+        if view == "Profile":
+            st.markdown("[Jump to comparison](#compare-with-earth)")
+        else:
+            st.button("Compare with Earth", on_click=open_comparison)
+        with st.expander("Edit comparison"):
+            for name in tray:
+                st.button(f"Remove {name} from comparison", on_click=enqueue_comparison, args=(name,),
+                          key=f"tray_remove_{name}")
+            st.button("Clear comparison", on_click=lambda: st.session_state.update(comparison_tray=[]))
+
 if view == "Explore":
     st.subheader("Explore confirmed planets")
     with st.container(key="discovery-shortcuts"):
@@ -1690,11 +1744,20 @@ if view == "Explore":
 
 if view in {"Explore", "Saved"}:
     is_saved = view == "Saved"
+    page_key = "saved_page" if is_saved else "catalogue_page"
+    search_key = "saved_search" if is_saved else "catalogue_search"
+    reset_page = {"on_change": change_page, "args": (page_key, 0)}
     st.subheader("Saved planets" if is_saved else "Planet catalogue")
+    query = st.text_input("Search saved planets" if is_saved else "Search catalogue",
+                          placeholder="Planet or host star", key=search_key, max_chars=120,
+                          **reset_page).strip()
     controls = st.columns(3)
     if is_saved:
+        collection_options = ["All saved", *sorted(st.session_state["collections"])]
+        if st.session_state.get("saved_collection") not in collection_options:
+            st.session_state["saved_collection"] = "All saved"
         selection_name = controls[0].selectbox(
-            "Collection", ["All saved", *sorted(st.session_state["collections"])],
+            "Collection", collection_options, key="saved_collection", **reset_page,
         )
         saved_names = st.session_state["favorites"]
         if selection_name != "All saved":
@@ -1703,7 +1766,7 @@ if view in {"Explore", "Saved"}:
     else:
         collection = controls[0].selectbox(
             "Collection", ["All worlds", "Closest worlds", "Giant planets", "Unusual orbits", "Multi-planet systems"],
-            key="catalogue_collection",
+            key="catalogue_collection", **reset_page,
         )
         catalogue = fdf
         if collection == "Closest worlds":
@@ -1720,7 +1783,12 @@ if view in {"Explore", "Saved"}:
         "Newest discoveries": (YEAR, False), "Latest publications": ("disc_pubdate", False),
         "Name": (NAME, True),
     }
-    sort_by = controls[1].selectbox("Sort planets", list(sort_options), key="catalogue_sort")
+    if query:
+        name_match = catalogue[NAME].str.contains(query, case=False, regex=False, na=False)
+        host_match = catalogue[HOST].str.contains(query, case=False, regex=False, na=False)
+        catalogue = catalogue[name_match | host_match]
+
+    sort_by = controls[1].selectbox("Sort planets", list(sort_options), key="catalogue_sort", **reset_page)
     sort_key, ascending = sort_options[sort_by]
     catalogue = catalogue.sort_values([sort_key, NAME] if sort_key != NAME else [NAME],
                                       ascending=[ascending, True] if sort_key != NAME else ascending)
@@ -1728,8 +1796,12 @@ if view in {"Explore", "Saved"}:
     if sort_by == "Latest publications":
         st.caption("Discovery publication date from NASA. Catalogue release dates are listed separately in Trends.")
     if catalogue.empty:
-        st.info("Save planets from their profiles to fill this collection." if is_saved
-                else "No planets match this collection and the current filters.")
+        if query:
+            st.info("No planets match this search in the current selection.")
+            st.button("Clear search", on_click=lambda: st.session_state.update({search_key: ""}))
+        else:
+            st.info("Save planets from their profiles to fill this collection." if is_saved
+                    else "No planets match this collection and the current filters.")
     else:
         st.caption(f"{len(catalogue):,} planets · {st.session_state['distance_unit']} · {st.session_state['size_unit']} units")
         browse, detail = st.columns([2, 1], gap="medium")
@@ -1737,18 +1809,18 @@ if view in {"Explore", "Saved"}:
             if layout == "Cards":
                 page_size = 12
                 last_page = (len(catalogue) - 1) // page_size
-                page = min(last_page, max(0, st.session_state.get("catalogue_page", 0)))
-                st.session_state["catalogue_page"] = page
+                page = min(last_page, max(0, st.session_state.get(page_key, 0)))
+                st.session_state[page_key] = page
                 start = page * page_size
                 for offset in range(start, min(start + page_size, len(catalogue)), 2):
                     cards = st.columns(2)
                     for col, (_, planet_row) in zip(cards, catalogue.iloc[offset:offset + 2].iterrows()):
                         with col.container(border=True):
-                            show_summary_card(planet_row, f"preview_{offset}_{planet_row[NAME]}")
+                            show_summary_card(planet_row, is_saved)
                 previous, position, next_page = st.columns(3, vertical_alignment="center")
-                previous.button("Previous", disabled=page == 0, on_click=change_page, args=(-1,))
+                previous.button("Previous", disabled=page == 0, on_click=change_page, args=(page_key, page - 1))
                 position.caption(f"Page {page + 1} of {last_page + 1}")
-                next_page.button("Next", disabled=page == last_page, on_click=change_page, args=(1,))
+                next_page.button("Next", disabled=page == last_page, on_click=change_page, args=(page_key, page + 1))
             else:
                 columns = [RADIUS, MASS, DISTANCE, YEAR, ESI, HZ_STATUS]
                 with st.expander("Table columns"):
@@ -1787,12 +1859,12 @@ if view in {"Explore", "Saved"}:
                     st.caption(f"{row[HOST]} · {int(row[YEAR])} · {row[METHOD]}")
                     st.write(zone_label(row[HZ_STATUS]))
                     st.metric("Earth similarity", measurement(row[ESI], ".3f"))
-                    st.button(f"Open {row[NAME]}", type="primary", on_click=open_profile,
+                    st.button("Open full profile", type="primary", on_click=open_profile,
                               args=(row[NAME], is_saved), width="stretch")
                     selected = row[NAME] in st.session_state.get("comparison_tray", [])
                     st.button("Remove from comparison" if selected else "Add to comparison",
                               on_click=enqueue_comparison, args=(row[NAME],), width="stretch",
-                              disabled=not selected and len(st.session_state.get("comparison_tray", [])) >= 4)
+                              disabled=not selected and len(tray) >= COMPARISON_LIMIT)
     if is_saved and st.session_state["favorites"]:
         with st.expander("Manage collections"):
             with st.form("planet_collection"):
@@ -1806,15 +1878,6 @@ if view in {"Explore", "Saved"}:
                 st.rerun()
     freshness = datetime.fromisoformat(str(df.attrs["fetched_at"])).strftime("%d %b %Y, %H:%M UTC")
     st.caption(f"NASA archive · Fetched {freshness}")
-
-tray = st.session_state.get("comparison_tray", [])
-if tray and view in {"Explore", "Saved", "Profile"}:
-    with st.container(border=True, key="compare-tray"):
-        st.caption(f"Comparison · {len(tray)} of 4 planets")
-        st.write(" · ".join(tray))
-        compare_col, clear_col = st.columns(2)
-        compare_col.button("Compare with Earth", on_click=open_comparison, disabled=len(tray) < 2)
-        clear_col.button("Clear comparison", on_click=lambda: st.session_state.update(comparison_tray=[]))
 
 def chart_table(frame, label="View chart data"):
     panel = st.expander(label, on_change="rerun")
@@ -2520,10 +2583,10 @@ if st.session_state["active_view"] == "Profile":
     st.button("Remove saved planet" if pick in st.session_state["favorites"] else "Save planet",
               on_click=toggle_saved, key="save_planet")
     st.caption("Saved planets and collections are stored in this browser.")
-    selected = pick in st.session_state.get("comparison_tray", [])
+    selected = pick in tray
     st.button("Remove from comparison" if selected else "Add to comparison",
               on_click=enqueue_comparison, args=(pick,), key="profile_compare",
-              disabled=not selected and len(st.session_state.get("comparison_tray", [])) >= 4)
+              disabled=not selected and len(tray) >= COMPARISON_LIMIT)
     known = sum(pd.notna(planet[c]) for c in [RADIUS, MASS, PERIOD, TEMP, DISTANCE, SEMI_MAJOR])
     st.caption(f"Data coverage: {known}/6 core measurements published. A dash means unknown, not zero.")
 
@@ -2691,11 +2754,11 @@ if st.session_state["active_view"] == "Profile":
             )
 
     comparison_names = list(dict.fromkeys([
-        pick, *([rival_pick] if rival is not None else []), *st.session_state.get("comparison_tray", []),
-    ]))[:4]
-    comparison_rows = df.set_index(NAME).reindex(comparison_names)
-    if len(comparison_names) > 1:
+        pick, *([rival_pick] if rival is not None else []), *tray,
+    ]))[:COMPARISON_LIMIT]
+    if len(comparison_names) > 1 or selected:
         st.markdown("### Compare with Earth")
+        comparison_rows = df.set_index(NAME).loc[comparison_names]
         measure_specs = [
             (RADIUS, f"Radius (R{size_suffix})", 1 / radius_divisor, 1.0, ".3g"),
             (MASS, f"Mass (M{size_suffix})", 1 / mass_divisor, 1.0, ".3g"),
@@ -2706,14 +2769,20 @@ if st.session_state["active_view"] == "Profile":
             (ESI, "Earth similarity", 1.0, 1.0, ".3f"),
             (DISTANCE, f"Distance ({distance_suffix})", distance_factor, 0.0, ",.1f"),
         ]
-        comparison = {"Measure": [label for _, label, *_ in measure_specs], "Earth": [
-            measurement(earth * factor, spec) for _, _, factor, earth, spec in measure_specs
-        ]}
+        values = {
+            "Measure": [label for _, label, *_ in measure_specs] + ["Habitable zone"],
+            "Earth": [earth * factor for _, _, factor, earth, _ in measure_specs] + ["Conservative zone"],
+        }
         for name, row in comparison_rows.iterrows():
-            comparison[name] = [
-                measurement(row[column] * factor, spec)
-                for column, _, factor, _, spec in measure_specs
+            values[name] = [row[column] * factor for column, _, factor, _, _ in measure_specs] + [
+                zone_label(row[HZ_STATUS])
             ]
+        formats = [spec for _, _, _, _, spec in measure_specs]
+        comparison = {
+            name: [measurement(value, spec) for value, spec in zip(column, formats)] + [column[-1]]
+            for name, column in values.items() if name != "Measure"
+        }
+        comparison = {"Measure": values["Measure"], **comparison}
         layout = st.radio("Comparison layout", ["One at a time", "All planets"], horizontal=True)
         if layout == "One at a time":
             against = st.selectbox("Show planet beside Earth", comparison_names)
@@ -2722,15 +2791,19 @@ if st.session_state["active_view"] == "Profile":
             table = comparison
         st.dataframe(pd.DataFrame(table), hide_index=True, column_config={"Measure": st.column_config.TextColumn(pinned=True)})
         st.caption("Earth reference temperature: 255 K equilibrium temperature.")
-        summary = go.Figure(go.Table(
-            header=dict(values=list(table), fill_color=SIDEBAR_BG, font=dict(color=TEXT_COLOR)),
-            cells=dict(values=list(table.values()), fill_color=CARD_BG, font=dict(color=TEXT_COLOR)),
-        ))
-        summary.update_layout(title="Exoplanet comparison · NASA Exoplanet Archive", height=350,
-                              paper_bgcolor=PAGE_BG, font_color=TEXT_COLOR, margin=dict(l=0, r=0, t=50, b=0))
-        with st.expander("Export comparison as an image"):
-            st.caption("Choose Download plot as a PNG in the chart toolbar.")
-            st.plotly_chart(summary, config=CHART_CONFIG)
+        st.download_button("Download full comparison (CSV)", pd.DataFrame(values).to_csv(index=False),
+                           file_name="exoplanet_comparison.csv", mime="text/csv", on_click="ignore")
+        st.caption("Share this page’s URL to open the same planet selection.")
+        export_panel = st.expander("Export comparison as an image", on_change="rerun")
+        if export_panel.open:
+            summary = go.Figure(go.Table(
+                header=dict(values=list(table), fill_color=SIDEBAR_BG, font=dict(color=TEXT_COLOR)),
+                cells=dict(values=list(table.values()), fill_color=CARD_BG, font=dict(color=TEXT_COLOR)),
+            ))
+            summary.update_layout(title="Exoplanet comparison · NASA Exoplanet Archive", height=350,
+                                  paper_bgcolor=PAGE_BG, font_color=TEXT_COLOR, margin=dict(l=0, r=0, t=50, b=0))
+            export_panel.caption("Choose Download plot as a PNG in the chart toolbar.")
+            export_panel.plotly_chart(summary, config=CHART_CONFIG)
 
     with st.expander("Measurements and sources"):
         st.caption("NASA publishes uncertainty ranges and source links for some values. "

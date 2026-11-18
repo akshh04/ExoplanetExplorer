@@ -1,7 +1,7 @@
 const storageKey = "exoplanet-explorer.preferences.v1";
 let previousView;
 let previousPreview;
-let catalogueScroll = 0;
+const catalogueScroll = { Explore: 0, Saved: 0 };
 
 export default function ({ data, setStateValue, setTriggerValue }) {
     if (!data.initialized) {
@@ -21,14 +21,15 @@ export default function ({ data, setStateValue, setTriggerValue }) {
     }
 
     const scrollArea = document.querySelector('[data-testid="stMain"]');
+    const isCatalogue = Object.hasOwn(catalogueScroll, data.view);
     const trackScroll = () => {
-        if (data.view === "Explore") catalogueScroll = scrollArea.scrollTop;
+        if (isCatalogue) catalogueScroll[data.view] = scrollArea.scrollTop;
     };
     let resizeTimer;
     if (scrollArea) {
         scrollArea.addEventListener("scroll", trackScroll, { passive: true });
-        if (previousView === "Profile" && data.view === "Explore") {
-            const position = catalogueScroll;
+        if (previousView === "Profile" && isCatalogue) {
+            const position = catalogueScroll[data.view];
             resizeTimer = setTimeout(() => scrollArea.scrollTo({ top: position }), 250);
         } else if (data.preview && data.preview !== previousPreview && innerWidth <= 640) {
             resizeTimer = setTimeout(() => {

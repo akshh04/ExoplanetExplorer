@@ -1,11 +1,14 @@
 """Chromium smoke coverage against a local, synthetic NASA endpoint response."""
 
+import csv
+import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import time
+from urllib.parse import parse_qs, urlsplit
 from urllib.request import urlopen
 
 from playwright.sync_api import expect, sync_playwright
@@ -21,6 +24,11 @@ def check_dashboard(browser):
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
 
+    def wait_for_render():
+        page.wait_for_function(
+            "document.querySelector('[data-testid=stApp]')?.dataset.testScriptState === 'notRunning'",
+        )
+
     def click_navigation(label):
         radio = page.get_by_role("radio", name=label, exact=True)
         page.get_by_test_id("stRadioOption").filter(has=radio).click()
@@ -30,7 +38,7 @@ def check_dashboard(browser):
     page.wait_for_function("localStorage.getItem('exoplanet-explorer.preferences.v1') !== null")
     search_input = page.get_by_role("combobox", name="Find a planet")
     expect(search_input).to_be_visible()
-    page.wait_for_function("document.querySelector('[data-testid=stApp]')?.dataset.testScriptState === 'notRunning'")
+    wait_for_render()
     # Streamlit may remount inputs as browser preferences hydrate on first load.
     for _ in range(3):
         page.keyboard.press("/")
@@ -44,6 +52,17 @@ def check_dashboard(browser):
     expect(drawer.get_by_role("checkbox", name="Exclude planets with unknown distance")).not_to_be_checked()
     drawer.get_by_role("button", name="Apply filters").click()
     expect(drawer).to_have_count(0)
+    assert parse_qs(urlsplit(page.url).query).get("unknown") is None
+
+    catalogue_search = page.get_by_role("textbox", name="Search catalogue")
+    catalogue_search.fill("Test Star 2")
+    catalogue_search.press("Enter")
+    expect(page.get_by_role("button", name="Open Test World 8 b", exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="Open Test World 3 b", exact=True)).to_have_count(0)
+    page.get_by_role("button", name="Open Test World 8 b", exact=True).click()
+    expect(page.get_by_role("heading", name="Individual planet profile")).to_be_visible()
+    page.get_by_role("button", name="Back to catalogue", exact=True).click()
+    expect(catalogue_search).to_have_value("Test Star 2")
 
     for width in (320, 375, 768, 1440):
         page.set_viewport_size({"width": width, "height": 900})
@@ -52,9 +71,10 @@ def check_dashboard(browser):
                    .evaluate_all("(nodes) => nodes.map(node => node.getBoundingClientRect().height)")) >= 44
 
     click_navigation("Charts")
-    expect(page).to_have_url(f"{URL}/?view=Trends")
+    expect(page.get_by_role("heading", name="The pace of discovery")).to_be_visible()
+    page.wait_for_function("new URLSearchParams(location.search).get('view') === 'Trends'")
     click_navigation("Orbits")
-    expect(page).to_have_url(f"{URL}/?view=Orbits")
+    page.wait_for_function("new URLSearchParams(location.search).get('view') === 'Orbits'")
     expect(page.get_by_role("heading", name="Orbital period vs. planet size")).to_be_visible()
     page.go_back()
     expect(page.get_by_role("heading", name="The pace of discovery")).to_be_visible()
@@ -73,6 +93,43 @@ def check_dashboard(browser):
     expect(page.get_by_role("button", name="Preview Test World 8 b")).to_be_visible()
     page.reload()
     expect(page.get_by_role("button", name="Preview Test World 8 b")).to_be_visible()
+    planets = ["Test World 8 b", "Test World 6 b", "Test World 7 b"]
+    for index, planet in enumerate(planets):
+        page.get_by_role("button", name=f"Open {planet}", exact=True).click()
+        expect(page.get_by_test_id("stMarkdownContainer").locator(".profile-name")).to_have_text(planet)
+        wait_for_render()
+        page.get_by_role("button", name="Add to comparison", exact=True).click()
+        expect(page.get_by_role("button", name="Remove from comparison", exact=True)).to_be_visible()
+        wait_for_render()
+        if index == 0:
+            page.get_by_role("button", name="Back to saved planets", exact=True).click()
+            expect(page.get_by_role("heading", name="Saved planets")).to_be_visible()
+            wait_for_render()
+            click_navigation("Explore")
+        else:
+            page.get_by_role("button", name="Back to catalogue", exact=True).click()
+        expect(catalogue_search).to_be_visible()
+        if index == 0:
+            catalogue_search.fill("Test Star 2")
+            catalogue_search.press("Enter")
+        expect(catalogue_search).to_have_value("Test Star 2")
+        wait_for_render()
+    wait_for_render()
+    page.get_by_role("button", name="Compare with Earth", exact=True).click()
+    expect(page.get_by_test_id("stMarkdownContainer").locator(".profile-name")).to_have_text(planets[0])
+    page.wait_for_function("(name) => new URLSearchParams(location.search).get('planet') === name", arg=planets[0])
+    page.wait_for_function("JSON.parse(new URLSearchParams(location.search).get('tray') || '[]').length === 3")
+    assert json.loads(parse_qs(urlsplit(page.url).query)["tray"][0]) == planets
+
+    recipient = browser.new_page(viewport={"width": 375, "height": 900})
+    recipient.goto(page.url)
+    expect(recipient.get_by_role("heading", name="Compare with Earth")).to_be_visible()
+    with recipient.expect_download() as exported:
+        recipient.get_by_role("button", name="Download full comparison (CSV)").click()
+    with exported.value.path().open(newline="", encoding="utf-8") as download:
+        assert next(csv.reader(download)) == ["Measure", "Earth", *planets]
+    expect(recipient.get_by_test_id("stException")).to_have_count(0)
+    recipient.close()
     expect(page.get_by_test_id("stException")).to_have_count(0)
     assert not errors, errors
     page.close()

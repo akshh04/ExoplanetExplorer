@@ -15,13 +15,13 @@ Index help identify candidates for further study; they do not establish that a p
 1. Search the full catalogue by planet name, or open **Explore** and pick a collection.
 2. Open **Filters** beside the result count. The drawer applies changes together. On a laptop,
    the sidebar also offers live filters, named filter sets, unit preferences and CSV export.
-3. Browse planets as cards or as a sortable table. Select a planet to preview it, open its
-   profile or add it to the comparison tray.
+3. Search the catalogue by planet or host star within the current filters. Browse cards or a
+   sortable table, then open a profile directly or use the preview panel.
 4. Open **Charts** for discovery trends, size and orbit, statistical clusters, the 3D and 2D
    explorers, habitable-zone candidates, and a sky map. **Learn** explains the science and units.
 5. Open **Saved** to organize bookmarked planets into collections. The browser remembers your
    theme, units, catalogue layout and saved items. URLs record the current view, filters and the
-   primary profile comparison.
+   full comparison tray.
 
 Use **/** to focus search and **F** to open filters when focus is outside a form. On a phone,
 catalogue cards stack and comparisons start with one selected planet alongside Earth.
@@ -33,7 +33,7 @@ catalogue cards stack and comparisons start with one selected planet alongside E
 - **Profiles:** measurement coverage, uncertainty ranges and sources when NASA supplies them,
   a host system diagram and planets with similar published measurements.
 - **Comparison:** compare up to four selected planets with Earth, switch to one planet at a time,
-  and export a summary image with NASA attribution.
+  share the full selection by URL, and export a CSV or a summary image with NASA attribution.
 - **Discovery:** mission and facility timelines, first archive release dates, an accessible
   data table alongside charts, and a sky map of reported coordinates.
 - **Units:** select light-years or parsecs and Earth or Jupiter units for catalogue and profile values.
