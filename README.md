@@ -118,18 +118,14 @@ GitHub Actions runs both suites on pull requests and pushes to `main`.
 | `archive_cache.py`, `data_contract.py` | Snapshot storage and required NASA columns |
 | `explorer_browser.py`, `browser_state.js` | Browser preferences, keyboard shortcuts, and navigation history |
 | `tests/` | Synthetic archive fixture, regression tests, and Chromium checks |
-| `scripts/visit_site.py` | Browser check for the hosted catalogue |
 
 See the [interface overview](docs/UI_ROADMAP.md) for the features available across screen sizes.
 
-## Hosting and manual visits
+## Hosting
 
 The live app is hosted on **Streamlit Community Cloud** at <https://exoexplorer.streamlit.app/>.
 Community Cloud can put inactive apps to sleep. If that happens, open the site and use its wake-up
 button.
-
-Use **Actions → Manual dashboard visit → Run workflow** for a one-off browser check of the hosted
-catalogue. It checks the visible planet count and can wake the app if needed.
 
 ## Data attribution
 
