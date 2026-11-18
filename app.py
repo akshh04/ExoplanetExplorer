@@ -1379,9 +1379,19 @@ def filter_fields(prefix="", values=None):
             filters["dist_limit"] = st.slider(
                 "Max distance (parsecs)", 0.0, MAX_DIST, step=50.0, key="dist_limit",
             )
-        filters["keep_unknown_dist"] = st.checkbox(
-            "Include unknown distances", key=keyed("keep_unknown_dist"), **initial("keep_unknown_dist"),
-        )
+        if prefix:
+            excluded = st.checkbox("Exclude planets with unknown distance",
+                                   key=keyed("exclude_unknown"), value=not values["keep_unknown_dist"])
+            filters["keep_unknown_dist"] = not excluded
+        else:
+            st.session_state["exclude_unknown"] = not values["keep_unknown_dist"]
+
+            def update_distance_coverage():
+                st.session_state["keep_unknown_dist"] = not st.session_state["exclude_unknown"]
+
+            st.checkbox("Exclude planets with unknown distance", key="exclude_unknown",
+                        on_change=update_distance_coverage)
+            filters["keep_unknown_dist"] = values["keep_unknown_dist"]
     with st.expander("Habitability and coverage"):
         filters["hz_filter"] = st.multiselect(
             "Habitable-zone class", HZ_ORDER, key=keyed("hz_filter"), help=HZ_HELP,

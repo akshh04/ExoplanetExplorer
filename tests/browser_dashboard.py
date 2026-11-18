@@ -41,6 +41,7 @@ def check_dashboard(browser):
     page.get_by_role("button", name="Filters", exact=True).click()
     drawer = page.get_by_role("dialog")
     expect(drawer).to_be_visible()
+    expect(drawer.get_by_role("checkbox", name="Exclude planets with unknown distance")).not_to_be_checked()
     drawer.get_by_role("button", name="Apply filters").click()
     expect(drawer).to_have_count(0)
 
