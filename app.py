@@ -7,8 +7,10 @@ import logging
 import threading
 import time
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from io import StringIO
 from typing import Optional
+from urllib.parse import parse_qs, quote, urlencode, urljoin, urlsplit
 
 import numpy as np
 import pandas as pd
@@ -20,7 +22,9 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from streamlit.runtime.scriptrunner import add_script_run_ctx
 
+import archive_cache
 from data_contract import validate_archive_columns
+from explorer_browser import browser_state, route_writer
 
 LOGGER = logging.getLogger("exoplanet_explorer")
 
@@ -28,9 +32,8 @@ st.set_page_config(
     page_title="Exoplanet Explorer",
     layout="wide",
     page_icon="🪐",
-    # Keep the explorer as the first thing users see; filters remain available
-    # from the sidebar toggle when needed.
-    initial_sidebar_state="collapsed",
+    # Streamlit opens the filter rail on wide screens and collapses it on phones.
+    initial_sidebar_state="auto",
     menu_items={
         "About": (
             "Interactive exploration of the NASA Exoplanet Archive "
@@ -38,6 +41,38 @@ st.set_page_config(
         )
     },
 )
+
+# Browser preferences are loaded once per session and never overwrite URL state.
+PREFERENCE_DEFAULTS = {
+    "dark_mode": False, "distance_unit": "Light-years", "size_unit": "Earth",
+    "catalogue_layout": "Cards", "favorites": [], "filter_sets": {}, "collections": {},
+}
+for preference, default in PREFERENCE_DEFAULTS.items():
+    st.session_state.setdefault(preference, default)
+    # Keep preferences whose widgets are only mounted on one page.
+    st.session_state[preference] = st.session_state[preference]
+with st.container(key="browser-state"):
+    browser = browser_state(
+        key="explorer_browser",
+        data={"initialized": st.session_state.get("preferences_loaded", False),
+              "preferences": {key: st.session_state[key] for key in PREFERENCE_DEFAULTS},
+              "view": st.session_state.get("active_view", "Explore"),
+              "preview": st.session_state.get("preview_planet")},
+        on_preferences_change=lambda: None,
+        on_route_change=lambda: None,
+    )
+if not st.session_state.get("preferences_loaded") and browser.preferences is not None:
+    if isinstance(browser.preferences, dict):
+        for preference, default in PREFERENCE_DEFAULTS.items():
+            value = browser.preferences.get(preference)
+            if type(value) is type(default) and (
+                not isinstance(default, str) or value in {
+                    "Earth", "Jupiter", "Light-years", "Parsecs", "Cards", "Table",
+                }
+            ):
+                st.session_state[preference] = value
+    st.session_state["preferences_loaded"] = True
+    st.rerun()
 
 # --- THEME ---------------------------------------------------------------
 # Streamlit's real theme (the one that also reskins native canvas-rendered
@@ -62,12 +97,11 @@ if IS_DARK:
     CHART_FONT, CHART_GRID = "#e6edf3", "rgba(230,237,243,0.15)"
     ACCENT_SOFT, SHADOW = "rgba(167,139,250,0.55)", "rgba(0,0,0,0.45)"
     HOVER_TINT, FOCUS_RING = "rgba(230,237,243,0.07)", "#a78bfa"
-    TAB_BAR_BG, LINK_COLOR = "rgba(14,17,23,0.85)", "#7dd3fc"
-    TAB_ACTIVE_BG = "rgba(167,139,250,0.18)"
+    LINK_COLOR = "#7dd3fc"
     CHIP_BG = "rgba(230,237,243,0.07)"
     CHIP_ACTIVE_BG, CHIP_ACTIVE_FG = "#a78bfa", "#0e1117"
 else:
-    PAGE_BG, SIDEBAR_BG, CARD_BG = "#ffffff", "#f0f2f6", "rgba(128,128,128,0.08)"
+    PAGE_BG, SIDEBAR_BG, CARD_BG = "#f8f9fd", "#f0f2fa", "#ffffff"
     TEXT_COLOR, MUTED_TEXT, BORDER = "#31333f", "#5c6470", "rgba(49,51,63,0.16)"
     INPUT_BG = "#ffffff"
     GRADIENT = "linear-gradient(95deg, #0284c7 0%, #7c3aed 55%, #db2777 100%)"
@@ -75,8 +109,7 @@ else:
     CHART_FONT, CHART_GRID = "#31333f", "rgba(49,51,63,0.12)"
     ACCENT_SOFT, SHADOW = "rgba(124,58,237,0.45)", "rgba(15,23,42,0.10)"
     HOVER_TINT, FOCUS_RING = "rgba(49,51,63,0.05)", "#7c3aed"
-    TAB_BAR_BG, LINK_COLOR = "rgba(255,255,255,0.85)", "#0284c7"
-    TAB_ACTIVE_BG = "rgba(124,58,237,0.12)"
+    LINK_COLOR = "#0284c7"
     CHIP_BG = "rgba(49,51,63,0.06)"
     CHIP_ACTIVE_BG, CHIP_ACTIVE_FG = "#7c3aed", "#ffffff"
 
@@ -103,10 +136,19 @@ _dark_overrides = f"""
         color: {TEXT_COLOR} !important;
         border-color: {BORDER} !important;
     }}
+    input::placeholder {{ color: {MUTED_TEXT} !important; opacity: 1 !important; }}
+    [data-testid="stSelectbox"] [role="group"],
+    [data-testid="stSelectbox"] [role="group"] button,
+    [data-testid="stSelectbox"] input,
+    [role="listbox"], [role="option"] {{
+        background-color: {INPUT_BG} !important;
+        color: {TEXT_COLOR} !important;
+    }}
+    [data-testid="stTooltipIcon"] button {{ color: {MUTED_TEXT} !important; }}
+    [data-testid="stDataFrame"] canvas {{ filter: invert(0.9) hue-rotate(180deg); }}
+    [role="option"]:hover, [role="option"][data-focused="true"] {{ background-color: #334155 !important; }}
     [data-baseweb="tag"] {{ background-color: #334155 !important; }}
     [role="listbox"], [data-baseweb="popover"] [role="listbox"] {{ background-color: {INPUT_BG} !important; }}
-    [data-testid="stTabs"] [role="tab"] {{ color: {MUTED_TEXT} !important; }}
-    [data-testid="stTabs"] button[aria-selected="true"] {{ color: {TEXT_COLOR} !important; }}
     [data-testid="stDataFrame"], [data-testid="stDataFrame"] > div {{
         border-radius: 10px;
         border: 1px solid {BORDER};
@@ -126,6 +168,62 @@ _dark_overrides = f"""
 st.markdown(
     f"""
 <style>
+    .st-key-browser-state, .st-key-browser-route {{ display: none; }}
+    .st-key-catalogue-preview {{ scroll-margin-top: 10rem; }}
+    .st-key-catalogue-preview h4 {{ padding-top: 0; }}
+    .st-key-results-controls p {{ margin-bottom: 0; }}
+    [data-testid="stPlotlyChart"] {{ padding-top: 1.75rem; }}
+    [data-testid="stPlotlyChart"] .modebar {{ top: -1.5rem !important; }}
+    .stApp, [data-testid="stAppViewContainer"] {{ background: {PAGE_BG}; }}
+    [data-testid="stMainBlockContainer"] {{ max-width: 1440px; padding-top: 3.5rem; }}
+    h2, h3 {{ letter-spacing: -0.025em; }}
+    .st-key-explorer-navigation {{
+        position: sticky; top: 2.8rem; z-index: 10;
+        background: {PAGE_BG}; padding: 0.65rem 0;
+        border-bottom: 1px solid {BORDER};
+    }}
+    .st-key-explorer-navigation [role="radiogroup"] {{
+        display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.35rem; width: 100%;
+    }}
+    .st-key-explorer-navigation [role="radiogroup"] label {{
+        display: flex; align-items: center; justify-content: center;
+        min-height: 44px; margin: 0; padding: 0.45rem 0.25rem;
+        border-radius: 10px; background: {CHIP_BG};
+        cursor: pointer; border: 1px solid transparent;
+    }}
+    .st-key-explorer-navigation .st-key-chart_view [role="radiogroup"] {{
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+    }}
+    .st-key-explorer-navigation [role="radiogroup"] label {{ width: 100%; }}
+    .st-key-explorer-navigation [role="radiogroup"] label > div > div:first-child {{ display: none; }}
+    .st-key-explorer-navigation [role="radiogroup"] label:has(input:checked) {{
+        background: {CHIP_ACTIVE_BG};
+    }}
+    .st-key-explorer-navigation label:has(input:checked) p {{ color: {CHIP_ACTIVE_FG} !important; }}
+    .st-key-explorer-navigation label:has(input:focus-visible) {{ outline: 2px solid {FOCUS_RING}; outline-offset: 2px; }}
+    .st-key-discovery-shortcuts [data-testid="stButton"] button {{
+        min-height: 64px; border: 1px solid {BORDER};
+        border-radius: 14px; font-weight: 650; background: {CARD_BG};
+    }}
+    [data-testid="stButton"] button, [data-testid="stLinkButton"] a {{ min-height: 44px; border-radius: 10px; }}
+    @media (max-width: 950px) {{
+        .st-key-explorer-navigation .st-key-chart_view [role="radiogroup"] {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}
+    }}
+    @media (max-width: 640px) {{
+        .st-key-explorer-navigation {{ top: 2.7rem; padding: 0.45rem 0; }}
+        .st-key-explorer-navigation label p {{ font-size: 0.76rem; }}
+        .st-key-discovery-shortcuts [data-testid="stHorizontalBlock"] {{ flex-wrap: wrap; gap: 0.35rem; }}
+        .st-key-discovery-shortcuts [data-testid="stColumn"] {{ min-width: 100% !important; }}
+        .st-key-discovery-shortcuts [data-testid="stButton"] button {{ min-height: 44px; }}
+        .st-key-discovery-shortcuts [data-testid="stCaptionContainer"] {{ margin-bottom: 0.5rem; }}
+        .hero-sub {{ line-height: 1.4; }}
+        .st-key-results-controls [data-testid="stHorizontalBlock"] {{ flex-wrap: nowrap; }}
+        .st-key-results-controls [data-testid="stColumn"] {{ min-width: 0 !important; }}
+        .st-key-results-controls [data-testid="stColumn"]:first-child {{ flex: 0 0 45% !important; }}
+        .st-key-results-controls [data-testid="stColumn"]:last-child {{ flex: 1 1 0 !important; }}
+        [role="dialog"] {{ max-width: 100vw !important; }}
+    }}
     /* Metric cards. NOTE: the test id is `stMetric`, not `metric-container`. */
     [data-testid="stMetric"] {{
         background-color: {CARD_BG};
@@ -199,57 +297,6 @@ st.markdown(
         opacity: 0.8;
         margin-top: -0.2rem;
     }}
-    .exploration-brief {{
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 1.25rem;
-        margin: 0.2rem 0 1.1rem;
-        padding: 0.85rem 1rem;
-        border: 1px solid {BORDER};
-        border-radius: 12px;
-        background: linear-gradient(105deg, {CARD_BG}, transparent);
-    }}
-    .exploration-brief-copy {{
-        min-width: 0;
-    }}
-    .exploration-brief-title {{
-        font-size: 0.78rem;
-        font-weight: 750;
-        letter-spacing: 0.07em;
-        text-transform: uppercase;
-        color: {LINK_COLOR};
-        margin-bottom: 0.18rem;
-    }}
-    .exploration-brief-text {{
-        font-size: 0.94rem;
-        line-height: 1.45;
-        color: {TEXT_COLOR};
-    }}
-    .exploration-brief-meta {{
-        display: flex;
-        flex: 0 0 auto;
-        gap: 0.45rem;
-        flex-wrap: wrap;
-        justify-content: flex-end;
-    }}
-    .exploration-brief-pill {{
-        padding: 0.3rem 0.58rem;
-        border-radius: 999px;
-        border: 1px solid {BORDER};
-        color: {MUTED_TEXT};
-        font-size: 0.76rem;
-        white-space: nowrap;
-    }}
-
-    /* Tabs a little roomier than the default. NOTE: Streamlit renders each
-       tab as <div data-testid="stTab" role="tab">, not a <button> -- a
-       button[role="tab"] selector matches nothing. */
-    [data-testid="stTabs"] [role="tab"] {{
-        padding: 0.55rem 1.05rem;
-        font-size: 0.98rem;
-    }}
-
     /* Top-right theme toggle, level with the title. `vertical_alignment`
        centres the column boxes, but Streamlit collapses the title's column
        to a few pixels, so the glyphs ended up 26px below the switch on
@@ -332,7 +379,7 @@ st.markdown(
         margin-bottom: 1.1rem;
     }}
 
-    /* Section sub-headings inside tabs. */
+    /* Section sub-headings. */
     [data-testid="stMarkdownContainer"] h5 {{
         margin-top: 1.4rem;
         margin-bottom: 0.35rem;
@@ -341,8 +388,7 @@ st.markdown(
         opacity: 0.9;
     }}
 
-    /* Metric cards lift slightly on hover so they read as inspectable
-       objects rather than static text. */
+    /* Subtle hover feedback for metric cards. */
     [data-testid="stMetric"] {{
         transition: transform 140ms ease, border-color 140ms ease,
                     box-shadow 140ms ease;
@@ -364,23 +410,6 @@ st.markdown(
        genuinely narrow windows still wrap, which is the point. */
     .st-key-headline-metrics [data-testid="stColumn"] {{
         min-width: 140px;
-    }}
-
-    /* Keep the tab bar reachable on the long tabs. */
-    [data-testid="stTabs"] div[role="tablist"] {{
-        position: sticky;
-        top: 2.6rem;
-        z-index: 5;
-        backdrop-filter: blur(8px);
-        background: {TAB_BAR_BG};
-        border-bottom: 1px solid {BORDER};
-    }}
-    [data-testid="stTabs"] [role="tab"] {{
-        transition: color 120ms ease, background-color 120ms ease;
-        border-radius: 8px 8px 0 0;
-    }}
-    [data-testid="stTabs"] [role="tab"]:hover {{
-        background-color: {HOVER_TINT};
     }}
 
     /* Buttons and inputs: visible focus ring for keyboard users. */
@@ -434,16 +463,6 @@ st.markdown(
             white-space: nowrap;
         }}
         .hero-sub {{ font-size: 0.92rem; }}
-        .exploration-brief {{
-            align-items: flex-start;
-            flex-direction: column;
-            gap: 0.55rem;
-            margin-bottom: 0.9rem;
-        }}
-        .exploration-brief-meta {{
-            justify-content: flex-start;
-        }}
-
         /* Streamlit stacks columns on mobile by forcing min-width:100%, which
            turned 5 headline cards into 5 full-width slabs (and 8 profile ones
            into 8). Two compact cards per row instead; the flex row already
@@ -471,6 +490,10 @@ st.markdown(
         }}
         [data-testid="stMetricValue"] {{ font-size: 1.3rem; }}
         [data-testid="stMetricLabel"] p {{ font-size: 0.7rem; }}
+        [data-testid="stMetricLabel"] p {{
+            white-space: normal; overflow: visible; text-overflow: clip;
+            line-height: 1.35;
+        }}
         [data-testid="stMetricDelta"] {{ font-size: 0.68rem; }}
         /* Stack value over delta: side by side is too tight at this width. */
         [data-testid="stMetric"] > div {{
@@ -479,61 +502,6 @@ st.markdown(
         [data-testid="stMetric"] > div > div:has([data-testid="stMetricDelta"]) {{
             grid-row: 3;
             grid-column: 1;
-        }}
-
-        /* Nav: six tabs ran to 704px inside a 343px strip, so the last two --
-           one of them the planet profile -- sat off-screen with no affordance
-           that they existed. Rebuilt as a 3x2 grid of equal pills: everything
-           is visible at once, each is a proper tap target, and the selected
-           one is filled rather than marked by a 2px underline. */
-        [data-testid="stTabs"] div[role="tablist"] {{
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 0.45rem;
-            position: static;      /* two rows of chips are too tall to pin */
-            backdrop-filter: none;
-            background: none;
-            border-bottom: none;
-            padding: 0.15rem 0 0.35rem 0;
-            /* Streamlit's horizontal-scroll styling clips the second row. */
-            overflow: visible !important;
-        }}
-        /* Streamlit paints its underline rail as a 2px ::after bar, which no
-           border property can remove -- it left a second line running under
-           the pill grid. */
-        [data-testid="stTabs"] div[role="tablist"]::after {{
-            display: none !important;
-        }}
-        /* !important throughout: Streamlit's own emotion rules for tabs
-           out-specify a plain [data-testid] selector, so without it the chips
-           come out transparent and auto-height.
-           No border: two bordered rows put a line 6px above another line
-           straight across the nav, which read as a double border. The fill
-           alone separates the chips. */
-        [data-testid="stTabs"] [role="tab"] {{
-            width: 100% !important;
-            min-height: 44px !important;
-            margin: 0 !important;
-            padding: 0.4rem 0.3rem !important;
-            font-size: 0.79rem !important;
-            line-height: 1.15 !important;
-            text-align: center;
-            justify-content: center;
-            border: 0 !important;
-            border-radius: 10px !important;
-            background: {CHIP_BG} !important;
-        }}
-        [data-testid="stTabs"] [role="tab"][aria-selected="true"] {{
-            background: {CHIP_ACTIVE_BG} !important;
-            color: {CHIP_ACTIVE_FG} !important;
-            font-weight: 650 !important;
-        }}
-        /* Hover tooltips cannot be hovered on a touch screen: the "?" icons
-           only steal room beside the labels, and their help text is already
-           repeated in the captions. */
-        [data-testid="stTooltipIcon"],
-        [data-testid="stTooltipHoverTarget"] {{
-            display: none !important;
         }}
 
         /* Keep the theme toggle on the title's row. Left to itself Streamlit
@@ -813,12 +781,6 @@ HAB_VERSION = hashlib.sha1(
 ).hexdigest()[:12]
 
 
-# The archive answers with Transfer-Encoding: chunked and no Content-Length,
-# so there is no true percentage to report. The bar is paced against a typical
-# payload size while the caption reports the real number of bytes received.
-ESTIMATED_PAYLOAD_BYTES = 850_000
-
-
 @st.cache_data(ttl=86400, show_spinner=False)
 def fetch_exoplanet_table(_sink=None) -> pd.DataFrame:
     """Fetch the Planetary Systems Composite Parameters table from NASA.
@@ -830,17 +792,22 @@ def fetch_exoplanet_table(_sink=None) -> pd.DataFrame:
     keeps the dict out of the cache key.
     """
 
-    def report(fraction: float, message: str) -> None:
+    def report(message: str) -> None:
         if _sink is not None:
-            _sink["fraction"] = fraction
             _sink["message"] = message
 
     query = """
     select pl_name, hostname, discoverymethod, disc_year, pl_rade, pl_bmasse,
-           pl_orbper, pl_orbsmax, pl_eqt, st_teff, st_lum, sy_dist
+           pl_orbper, pl_orbsmax, pl_eqt, st_teff, st_lum, sy_dist,
+           pl_orbeccen, ra, dec, disc_facility, disc_pubdate,
+           pl_radeerr1, pl_radeerr2, pl_bmasseerr1, pl_bmasseerr2,
+           pl_orbpererr1, pl_orbpererr2, pl_eqterr1, pl_eqterr2,
+           pl_orbsmaxerr1, pl_orbsmaxerr2, sy_disterr1, sy_disterr2,
+           pl_rade_reflink, pl_bmasse_reflink, pl_orbper_reflink,
+           pl_eqt_reflink, pl_orbsmax_reflink, sy_dist_reflink
     from pscomppars
     """
-    report(0.04, "Opening a connection to the archive…")
+    report("Opening a connection to the archive…")
     response = None
     for attempt in range(3):
         try:
@@ -853,7 +820,7 @@ def fetch_exoplanet_table(_sink=None) -> pd.DataFrame:
             response.raise_for_status()
             break
         except (requests.Timeout, requests.ConnectionError) as exc:
-            if attempt == 2:
+            if isinstance(exc, requests.exceptions.ProxyError) or attempt == 2:
                 LOGGER.exception("NASA archive request failed after %d attempts", attempt + 1)
                 raise
             delay = 2 ** attempt
@@ -868,6 +835,7 @@ def fetch_exoplanet_table(_sink=None) -> pd.DataFrame:
             if response is None or response.status_code < 500 or attempt == 2:
                 LOGGER.exception("NASA archive returned an unrecoverable HTTP error")
                 raise
+            response.close()
             delay = 2 ** attempt
             LOGGER.warning(
                 "NASA archive returned HTTP %s; retrying in %ds",
@@ -880,27 +848,38 @@ def fetch_exoplanet_table(_sink=None) -> pd.DataFrame:
 
     # The server runs the query before it sends anything, so the first bytes
     # arrive several seconds in; that wait is covered by the step above.
-    report(0.18, "Query accepted — receiving the table…")
+    report("Query accepted — receiving the table…")
     parts, received, last_tick = [], 0, 0.0
-    for chunk in response.iter_content(chunk_size=65536):
-        if not chunk:
-            continue
-        parts.append(chunk)
-        received += len(chunk)
-        now = time.monotonic()
-        # Throttle: the table arrives in thousands of chunks and every update
-        # is a websocket round trip.
-        if now - last_tick >= 0.12:
-            last_tick = now
-            share = min(received / ESTIMATED_PAYLOAD_BYTES, 1.0)
-            report(0.18 + 0.62 * share, f"Receiving… {received / 1024:,.0f} KB")
+    with response:
+        for chunk in response.iter_content(chunk_size=65536):
+            if not chunk:
+                continue
+            parts.append(chunk)
+            received += len(chunk)
+            now = time.monotonic()
+            # Throttle: the table arrives in thousands of chunks and every update
+            # is a websocket round trip.
+            if now - last_tick >= 0.12:
+                last_tick = now
+                report(f"Receiving… {received / 1024:,.0f} KB")
 
-    report(0.82, f"Received {received / 1024:,.0f} KB — parsing…")
+    report(f"Received {received / 1024:,.0f} KB — parsing…")
     text = b"".join(parts).decode(response.encoding or "utf-8", errors="replace")
     if not text.lstrip().lower().startswith("pl_name"):
         # TAP reports query errors with a 200 and a plain-text body.
         raise RuntimeError(f"Archive returned an unexpected response: {text[:300]}")
 
+    fetched_at = datetime.now(timezone.utc)
+    frame = parse_archive(text)
+    try:
+        archive_cache.write(text, fetched_at)
+    except OSError:
+        LOGGER.warning("Could not write the archive snapshot", exc_info=True)
+    frame.attrs["fetched_at"] = fetched_at.isoformat()
+    return frame
+
+
+def parse_archive(text: str) -> pd.DataFrame:
     df = pd.read_csv(StringIO(text))
     validate_archive_columns(df.columns)
     if df.empty:
@@ -923,8 +902,19 @@ def fetch_exoplanet_table(_sink=None) -> pd.DataFrame:
         }
     )
 
-    df[YEAR] = pd.to_numeric(df[YEAR], errors="coerce").astype("Int64")
-    df = df.dropna(subset=[YEAR])
+    years = pd.to_numeric(df[YEAR], errors="coerce")
+    df[YEAR] = years.where(years.between(1900, datetime.now(timezone.utc).year + 1) & years.mod(1).eq(0)).astype("Int64")
+    df = df.dropna(subset=[NAME, HOST, YEAR]).drop_duplicates(NAME).reset_index(drop=True)
+    if df.empty:
+        raise ValueError("The archive contains no usable planet records.")
+    df[METHOD] = df[METHOD].fillna("Unknown")
+    for column in ("disc_facility", "disc_pubdate"):
+        if column not in df:
+            df[column] = pd.NA
+    for column in (RADIUS, MASS, PERIOD, SEMI_MAJOR, TEMP, STAR_TEMP, STAR_LUM, DISTANCE, "ra", "dec", "pl_orbeccen"):
+        if column not in df:
+            df[column] = np.nan
+        df[column] = pd.to_numeric(df[column], errors="coerce").replace([np.inf, -np.inf], np.nan)
     return df
 
 
@@ -940,10 +930,10 @@ def load_exoplanet_data(version: str = HAB_VERSION, _sink=None) -> pd.DataFrame:
     """
     df = fetch_exoplanet_table(_sink=_sink)
     if _sink is not None:
-        _sink.update(fraction=0.92, message="Computing habitable zones…")
+        _sink["message"] = "Computing habitable zones…"
     df = add_habitability_columns(df)
     if _sink is not None:
-        _sink.update(fraction=1.0, message=f"Ready — {len(df):,} planets")
+        _sink["message"] = f"Ready: {len(df):,} planets"
     return df
 
 
@@ -1032,7 +1022,11 @@ def transparent(fig, **layout):
     return fig
 
 
-CHART_CONFIG = {"displayModeBar": False, "scrollZoom": False, "responsive": True}
+CHART_CONFIG = {
+    "displayModeBar": True, "displaylogo": False, "scrollZoom": False,
+    "responsive": True, "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+    "toImageButtonOptions": {"format": "png", "filename": "exoplanet-explorer", "scale": 2},
+}
 
 # Plotly bakes a pixel height into the figure and CSS cannot resize the SVG,
 # so these are single values chosen to stay comfortable on a phone while still
@@ -1050,18 +1044,18 @@ with toggle_col:
 with header_col:
     st.markdown('<h1 class="hero-title">🪐 Exoplanet Explorer</h1>', unsafe_allow_html=True)
 st.markdown(
-    f'<p class="hero-sub">Live data on every confirmed world beyond our solar system, '
+    f'<p class="hero-sub">Discover confirmed worlds beyond our solar system, '
     f'straight from the <a href="{ARCHIVE_HOME}">NASA Exoplanet Archive</a>.</p>',
     unsafe_allow_html=True,
 )
 
 def load_with_progress():
-    """Fetch on a worker thread so this thread can keep painting the bar.
+    """Fetch on a worker thread while the script updates the loading status.
 
     Every Streamlit call stays here on the script thread; the worker only
-    writes numbers into `shared`.
+    updates the message in `shared`.
     """
-    shared = {"fraction": 0.0, "message": "Contacting the archive…"}
+    shared = {"message": "Contacting the archive…"}
     result = {}
 
     def worker():
@@ -1080,11 +1074,10 @@ def load_with_progress():
     # and the page does not flicker on ordinary reruns.
     thread.join(timeout=0.4)
 
-    bar = None
+    holder = None
     while thread.is_alive():
-        if bar is None:
-            box = st.empty().container()
-            status = box.status(
+        if holder is None:
+            status = st.status(
                 "Fetching live data from the NASA Exoplanet Archive", expanded=True
             )
             status.caption(
@@ -1093,10 +1086,7 @@ def load_with_progress():
                 "download."
             )
             holder = status.empty()
-            bar = holder.progress(0.0, text=shared["message"])
-        bar.progress(
-            min(max(float(shared["fraction"]), 0.0), 1.0), text=str(shared["message"])
-        )
+        holder.caption(str(shared["message"]))
         thread.join(timeout=0.1)
 
     if "error" in result:
@@ -1105,51 +1095,101 @@ def load_with_progress():
 
 
 loader = st.empty()
-with loader.container():
-    try:
+archive_problem = None
+try:
+    last_failure = st.session_state.get("archive_failure")
+    if last_failure and time.monotonic() - last_failure[0] < 90:
+        raise last_failure[1]
+    with loader.container():
         df = load_with_progress()
-    except requests.Timeout:
-        loader.empty()
-        st.error(
-            "**The NASA Exoplanet Archive did not respond in time.** "
-            "The service is occasionally slow under load."
-        )
-        if st.button("Try again", type="primary"):
-            fetch_exoplanet_table.clear()
-            load_exoplanet_data.clear()
-            st.rerun()
-        st.stop()
-    except Exception as exc:
-        loader.empty()
-        st.error("**Could not load data from the NASA Exoplanet Archive.**")
-        st.caption(f"{type(exc).__name__}: {exc}")
-        if st.button("Try again", type="primary"):
-            fetch_exoplanet_table.clear()
-            load_exoplanet_data.clear()
-            st.rerun()
-        st.stop()
-# Drops the whole loading block; a no-op when nothing was drawn.
+    st.session_state.pop("archive_failure", None)
+except Exception as exc:
+    if not last_failure or exc is not last_failure[1]:
+        st.session_state["archive_failure"] = (time.monotonic(), exc)
+    archive_problem = exc
+    try:
+        cached_csv, fetched_at = archive_cache.read()
+        df = add_habitability_columns(parse_archive(cached_csv))
+        df.attrs["fetched_at"] = fetched_at.isoformat()
+    except (OSError, ValueError, KeyError, TypeError, EOFError):
+        df = None
 loader.empty()
-st.session_state.setdefault("data_loaded_at", datetime.now(timezone.utc))
+
+
+def refresh_archive():
+    st.session_state.pop("archive_failure", None)
+    fetch_exoplanet_table.clear()
+    load_exoplanet_data.clear()
+
+
+if archive_problem is not None:
+    if isinstance(archive_problem, requests.Timeout):
+        problem = "The NASA Exoplanet Archive did not respond in time."
+    elif isinstance(archive_problem, requests.exceptions.ProxyError):
+        problem = "The network proxy could not connect to the NASA Exoplanet Archive."
+    elif isinstance(archive_problem, requests.RequestException):
+        problem = "Could not load data from the NASA Exoplanet Archive."
+    else:
+        problem = "Could not read the latest NASA catalogue."
+    if df is None:
+        st.error(problem)
+    else:
+        age = datetime.fromisoformat(str(df.attrs["fetched_at"])).strftime("%d %b %Y, %H:%M UTC")
+        st.warning(f"{problem} Showing a saved NASA snapshot fetched {age}.")
+    st.button("Try again", type="primary", on_click=refresh_archive)
+    with st.expander("Connection details"):
+        st.text(type(archive_problem).__name__)
+    if df is None:
+        st.stop()
+
 LOGGER.info("Dashboard data ready: %d planets", len(df))
 
+planet_names = frozenset(df[NAME])
 COLOR_MAP = method_colors(df[METHOD_SHORT].unique())
 YEAR_MIN, YEAR_MAX = int(df[YEAR].min()), int(df[YEAR].max())
 ALL_METHODS = sorted(df[METHOD].unique())
-MAX_DIST = float(np.ceil(df[DISTANCE].max() / 100) * 100)
+MAX_DIST = max(50.0, float(np.ceil(df[DISTANCE].max() / 100) * 100))
 
 FILTER_DEFAULTS = {
     "year_range": (YEAR_MIN, YEAR_MAX),
-    "methods": ALL_METHODS,
+    "methods": [],
     "dist_limit": MAX_DIST,
     "keep_unknown_dist": True,
     "hz_filter": [],
     "esi_floor": 0.0,
+    "complete_only": False,
 }
+VIEWS = ["Explore", "Saved", "Trends", "Orbits", "Classes", "3D", "Habitable", "Sky", "Profile", "Learn"]
+CORE_COLUMNS = [RADIUS, MASS, PERIOD, TEMP, DISTANCE, SEMI_MAJOR]
+CORE_LABELS = ["Radius", "Mass", "Orbital period", "Equilibrium temperature", "Distance", "Semi-major axis"]
+DISTANCE_SCALE = {"Light-years": 3.26156, "Parsecs": 1.0}
+DISTANCE_SUFFIX = {"Light-years": "ly", "Parsecs": "pc"}
+SIZE_SCALE = {"Earth": (1.0, 1.0, "⊕"), "Jupiter": (11.209, 317.828, "♃")}
+distance_factor = DISTANCE_SCALE.get(st.session_state["distance_unit"], 3.26156)
+distance_suffix = DISTANCE_SUFFIX.get(st.session_state["distance_unit"], "ly")
+radius_divisor, mass_divisor, size_suffix = SIZE_SCALE.get(st.session_state["size_unit"], SIZE_SCALE["Earth"])
+
+
+def measurement(value, spec, suffix=""):
+    return "—" if pd.isna(value) else f"{value:{spec}}{suffix}"
+
+
+def zone_label(status):
+    return {
+        "Conservative": "Conservative zone", "Optimistic": "Optimistic zone",
+        "Too hot": "Inside inner limit", "Too cold": "Beyond outer limit",
+        "Unknown": "Zone unknown",
+    }[status]
+
+
+route_visit = browser.route is not None or "route_initialized" not in st.session_state
+route_query = ({key: values[-1] for key, values in parse_qs(browser.route.lstrip("?")).items()}
+               if isinstance(browser.route, str) else dict(st.query_params))
+
 
 def _query_text(key: str) -> Optional[str]:
     """Read one scalar query parameter without trusting malformed URLs."""
-    value = st.query_params.get(key)
+    value = route_query.get(key)
     return value if isinstance(value, str) and value else None
 
 
@@ -1184,6 +1224,7 @@ def _filters_from_query() -> dict:
             parsed["esi_floor"] = float(esi)
         except ValueError:
             pass
+    parsed["complete_only"] = _query_text("complete") == "1"
     return parsed
 
 
@@ -1192,7 +1233,7 @@ def _sync_filters_to_query() -> None:
     params = {}
     if tuple(st.session_state["year_range"]) != tuple(FILTER_DEFAULTS["year_range"]):
         params["years"] = "-".join(str(value) for value in st.session_state["year_range"])
-    if st.session_state["methods"] != FILTER_DEFAULTS["methods"]:
+    if st.session_state["methods"] and set(st.session_state["methods"]) != set(ALL_METHODS):
         params["methods"] = ",".join(st.session_state["methods"])
     if st.session_state["dist_limit"] != FILTER_DEFAULTS["dist_limit"]:
         params["distance"] = f'{st.session_state["dist_limit"]:.2f}'.rstrip("0").rstrip(".")
@@ -1202,8 +1243,22 @@ def _sync_filters_to_query() -> None:
         params["hz"] = ",".join(st.session_state["hz_filter"])
     if st.session_state["esi_floor"] > 0:
         params["esi"] = f'{st.session_state["esi_floor"]:.2f}'
-    st.query_params.clear()
-    st.query_params.update(params)
+    if st.session_state["complete_only"]:
+        params["complete"] = "1"
+    params["view"] = st.session_state.get("active_view", "Explore")
+    if st.session_state.get("profile_pick") in planet_names:
+        params["planet"] = st.session_state["profile_pick"]
+    if st.session_state.get("profile_rival") in planet_names:
+        params["compare"] = st.session_state["profile_rival"]
+    st.session_state["route_params"] = params
+    with st.container(key="browser-route"):
+        route_writer(
+            key="route_writer",
+            data={"params": params, "replace": route_visit,
+                  "managed": ["years", "methods", "distance", "unknown", "hz",
+                              "esi", "complete", "view", "planet", "compare"]},
+        )
+
 
 
 def reset_filters() -> None:
@@ -1220,86 +1275,223 @@ def reset_filters() -> None:
 # both a `value=`/`default=` and a session-state entry makes Streamlit log a
 # warning on every rerun that follows a reset.
 _query_filters = _filters_from_query()
-for _key, _default in FILTER_DEFAULTS.items():
-    st.session_state.setdefault(_key, _query_filters.get(_key, _default))
+if route_visit:
+    st.session_state["route_initialized"] = True
+    st.session_state.update({
+        key: _query_filters.get(key, default) for key, default in FILTER_DEFAULTS.items()
+    })
+    st.session_state["active_view"] = _query_text("view") or "Explore"
+    for state_key, parameter in [("profile_pick", "planet"), ("profile_rival", "compare")]:
+        st.session_state[state_key] = _query_text(parameter)
+else:
+    for _key, _default in FILTER_DEFAULTS.items():
+        st.session_state.setdefault(_key, _default)
+st.session_state.update(st.session_state.pop("pending_filters", {}))
 
 # A data refresh can move the bounds under stored state (a new discovery year,
 # a newly catalogued far-away planet), so re-fit what is already there.
 _lo, _hi = st.session_state["year_range"]
-st.session_state["year_range"] = (max(YEAR_MIN, _lo), min(YEAR_MAX, _hi))
-st.session_state["dist_limit"] = min(max(0.0, st.session_state["dist_limit"]), MAX_DIST)
+_lo, _hi = sorted((min(YEAR_MAX, max(YEAR_MIN, _lo)), min(YEAR_MAX, max(YEAR_MIN, _hi))))
+st.session_state["year_range"] = (_lo, _hi)
+_distance = st.session_state["dist_limit"]
+st.session_state["dist_limit"] = min(max(0.0, _distance), MAX_DIST) if np.isfinite(_distance) else MAX_DIST
+_esi = st.session_state["esi_floor"]
+st.session_state["esi_floor"] = min(max(0.0, _esi), 1.0) if np.isfinite(_esi) else 0.0
 st.session_state["methods"] = [m for m in st.session_state["methods"] if m in ALL_METHODS]
 st.session_state["hz_filter"] = [h for h in st.session_state["hz_filter"] if h in HZ_ORDER]
+st.session_state.setdefault("active_view", _query_text("view") or "Explore")
+if st.session_state["active_view"] not in VIEWS:
+    st.session_state["active_view"] = "Explore"
+# Keep profile selections when their widgets are absent from the current page.
+for _state_key in ("active_view", "profile_pick", "profile_rival", "orbit_period_limit",
+                   "catalogue_sort", "catalogue_collection", "catalogue_columns"):
+    if _state_key in st.session_state:
+        st.session_state[_state_key] = st.session_state[_state_key]
 
-# --- SIDEBAR FILTERS -----------------------------------------------------
-with st.sidebar:
-    st.markdown(
-        '<div class="sidebar-brand">Filters</div>'
-        '<div class="sidebar-brand-sub">Applied to every chart and table.</div>',
-        unsafe_allow_html=True,
-    )
 
-    with st.expander("🔭  Discovery", expanded=True):
-        year_range = st.slider(
-            "Discovery year",
-            min_value=YEAR_MIN,
-            max_value=YEAR_MAX,
-            key="year_range",
-        )
-        all_methods = ALL_METHODS
-        selected_methods = st.multiselect(
-            "Discovery method",
-            options=ALL_METHODS,
-            placeholder="All methods",
-            key="methods",
-        )
+def open_profile(name, clear_filters=False):
+    """Keep the current selection when opening a planet from it."""
+    if clear_filters:
+        reset_filters()
+    st.session_state["profile_pick"] = name
+    st.session_state["highlighted_planet"] = name
+    st.session_state["active_view"] = "Profile"
 
-    with st.expander("📍  Distance", expanded=True):
-        max_dist = MAX_DIST
-        dist_limit = st.slider(
-            "Max distance (parsecs)",
-            min_value=0.0,
-            max_value=max_dist,
-            step=50.0,
-            key="dist_limit",
-        )
-        keep_unknown_dist = st.checkbox(
-            "Keep planets with unknown distance",
-            key="keep_unknown_dist",
-            help=f"{df[DISTANCE].isna().sum():,} planets have no published distance.",
-        )
 
-    with st.expander("🌍  Habitability", expanded=False):
-        hz_filter = st.multiselect(
-            "Habitable-zone class",
-            options=HZ_ORDER,
-            placeholder="Any class",
-            key="hz_filter",
-            help=HZ_HELP,
-        )
-        esi_floor = st.slider(
-            "Minimum Earth Similarity Index",
-            min_value=0.0,
-            max_value=1.0,
-            step=0.05,
-            key="esi_floor",
-            help=(
-                "0 keeps everything. Planets with no published radius or "
-                "temperature have no ESI and drop out above 0."
-            ),
-        )
+def search_planet():
+    if st.session_state.get("global_search"):
+        open_profile(st.session_state["global_search"], clear_filters=True)
+        st.session_state["global_search"] = None
 
-    st.button("Reset filters", width="stretch", on_click=reset_filters)
 
-    st.divider()
-    if st.button("🔄 Refresh data from NASA", width="stretch"):
-        fetch_exoplanet_table.clear()
-        load_exoplanet_data.clear()
+def apply_preset(preset):
+    reset_filters()
+    if preset == "Habitable candidates":
+        st.session_state["hz_filter"] = ["Conservative", "Optimistic"]
+    elif preset == "Nearby worlds":
+        st.session_state["dist_limit"] = min(50.0, MAX_DIST)
+        st.session_state["keep_unknown_dist"] = False
+    elif preset == "Recent discoveries":
+        st.session_state["year_range"] = (max(YEAR_MIN, YEAR_MAX - 2), YEAR_MAX)
+    elif preset == "Short years":
+        st.session_state["active_view"] = "Orbits"
+        st.session_state["orbit_period_limit"] = 87.97
+        return
+    st.session_state["active_view"] = "Explore"
+
+
+st.selectbox(
+    "Find a planet", options=sorted(planet_names), index=None,
+    placeholder="Search all planets",
+    key="global_search", on_change=search_planet,
+    help="Search the entire catalogue. Opening a planet resets filters. Keyboard shortcut: /.",
+)
+
+# --- FILTERS AND NAVIGATION ----------------------------------------------
+def filter_fields(prefix="", values=None):
+    values = values or st.session_state
+    keyed = lambda name: prefix + name
+    # Live sidebar values come from their widget keys. The drawer stages a
+    # separate copy and applies it in one full rerun on submit.
+    def initial(name):
+        return {"value": values[name]} if prefix else {}
+
+    filters = {}
+    with st.expander("Discovery", expanded=True):
+        filters["year_range"] = (
+            st.slider("Discovery year", YEAR_MIN, YEAR_MAX, key=keyed("year_range"), **initial("year_range"))
+            if YEAR_MIN < YEAR_MAX else (YEAR_MIN, YEAR_MAX)
+        )
+        filters["methods"] = st.multiselect(
+            "Discovery method", ALL_METHODS, key=keyed("methods"),
+            **({"default": values["methods"]} if prefix else {}),
+        )
+    with st.expander("Distance", expanded=True):
+        distance_label = f"Max distance ({distance_suffix})"
+        if prefix:
+            displayed = st.number_input(distance_label, min_value=0.0,
+                                        max_value=MAX_DIST * distance_factor,
+                                        value=values["dist_limit"] * distance_factor,
+                                        key=keyed("display_distance"), step=1.0)
+            filters["dist_limit"] = min(MAX_DIST, displayed / distance_factor)
+        else:
+            # Keep the canonical filter and shared URLs in parsecs.
+            filters["dist_limit"] = st.slider(
+                "Max distance (parsecs)", 0.0, MAX_DIST, step=50.0, key="dist_limit",
+            )
+        filters["keep_unknown_dist"] = st.checkbox(
+            "Include unknown distances", key=keyed("keep_unknown_dist"), **initial("keep_unknown_dist"),
+        )
+    with st.expander("Habitability and coverage"):
+        filters["hz_filter"] = st.multiselect(
+            "Habitable-zone class", HZ_ORDER, key=keyed("hz_filter"), help=HZ_HELP,
+            **({"default": values["hz_filter"]} if prefix else {}),
+        )
+        filters["esi_floor"] = st.slider(
+            "Minimum Earth Similarity Index", 0.0, 1.0, step=0.05,
+            key=keyed("esi_floor"), **initial("esi_floor"),
+        )
+        filters["complete_only"] = st.checkbox(
+            "Require all six core measurements", key=keyed("complete_only"),
+            help=", ".join(CORE_LABELS), **initial("complete_only"),
+        )
+    return filters
+
+
+def save_filter_set():
+    name = st.session_state.get("filter_name", "").strip()
+    if name:
+        st.session_state["filter_sets"] = {
+            **st.session_state["filter_sets"],
+            name: {key: st.session_state[key] for key in FILTER_DEFAULTS},
+        }
+
+
+def restore_filter_set():
+    preset = st.session_state["named_filter"]
+    if preset in st.session_state["filter_sets"]:
+        st.session_state.update(st.session_state["filter_sets"][preset])
+
+
+def dismiss_filters():
+    st.session_state["filter_dialog_open"] = False
+
+
+@st.dialog("Filters", position="right", on_dismiss=dismiss_filters)
+def filters_drawer():
+    revision = st.session_state.get("drawer_revision", 0)
+    with st.form(f"filter_form_{revision}"):
+        staged = filter_fields(f"draft_{revision}_", st.session_state)
+        apply, reset = st.columns(2)
+        with apply:
+            submitted = st.form_submit_button("Apply filters", type="primary", width="stretch")
+        with reset:
+            cleared = st.form_submit_button("Reset filters", width="stretch")
+    if submitted or cleared:
+        st.session_state["pending_filters"] = FILTER_DEFAULTS if cleared else staged
+        dismiss_filters()
         st.rerun()
-    st.caption("Data is cached for 24 hours.")
+
+
+def show_filters():
+    st.session_state["drawer_revision"] = st.session_state.get("drawer_revision", 0) + 1
+    st.session_state["filter_dialog_open"] = True
+
+
+with st.sidebar:
+    st.subheader("Filters")
+    if st.session_state["filter_sets"]:
+        st.selectbox("Saved filters", sorted(st.session_state["filter_sets"]), index=None,
+                     key="named_filter", on_change=restore_filter_set)
+        if st.session_state["named_filter"] and st.button("Delete saved filter"):
+            del st.session_state["filter_sets"][st.session_state["named_filter"]]
+            st.rerun()
+    live_filters = filter_fields()
+    st.button("Reset filters", width="stretch", on_click=reset_filters)
+    with st.expander("Save this filter set"):
+        st.text_input("Filter set name", key="filter_name", max_chars=40)
+        st.button("Save filter set", on_click=save_filter_set)
+    with st.expander("Display preferences"):
+        st.radio("Distance", list(DISTANCE_SCALE), key="distance_unit", horizontal=True)
+        st.radio("Planet size and mass", list(SIZE_SCALE), key="size_unit", horizontal=True)
+    st.button("Refresh data from NASA", width="stretch", on_click=refresh_archive)
+
+CHART_VIEWS = ["Trends", "Orbits", "Classes", "3D", "Habitable", "Sky"]
+NAV_GROUPS = ["Explore", "Charts", "Saved", "Learn"]
+
+
+def navigate_chart():
+    st.session_state["active_view"] = st.session_state["chart_view"]
+    st.session_state["last_chart"] = st.session_state["chart_view"]
+
+
+def navigate_group():
+    group = st.session_state["nav_group"]
+    st.session_state["active_view"] = st.session_state.get("last_chart", "Trends") if group == "Charts" else group
+
+
+view = st.session_state["active_view"]
+group = "Charts" if view in CHART_VIEWS else "Explore" if view == "Profile" else view
+st.session_state["nav_group"] = group
+with st.container(key="explorer-navigation"):
+    st.radio("Main navigation", NAV_GROUPS, key="nav_group", horizontal=True,
+             label_visibility="collapsed", width="stretch", on_change=navigate_group)
+    if group == "Charts":
+        st.session_state["chart_view"] = view
+        st.radio("Chart view", CHART_VIEWS, key="chart_view", horizontal=True,
+                 label_visibility="collapsed", width="stretch", on_change=navigate_chart)
+    if view == "Profile":
+        st.button("Back to catalogue", on_click=lambda: st.session_state.update(active_view="Explore"))
+
+year_range = live_filters["year_range"]
+selected_methods = live_filters["methods"]
+dist_limit = live_filters["dist_limit"]
+keep_unknown_dist = live_filters["keep_unknown_dist"]
+hz_filter = live_filters["hz_filter"]
+esi_floor = live_filters["esi_floor"]
 
 # Apply the global filters.
-methods_filter = selected_methods or all_methods
+methods_filter = selected_methods or ALL_METHODS
 mask = (
     df[YEAR].between(year_range[0], year_range[1])
     & df[METHOD].isin(methods_filter)
@@ -1313,8 +1505,9 @@ if hz_filter:
 if esi_floor > 0:
     # NaN >= x is False, so unscored planets drop out here by design.
     mask &= df[ESI] >= esi_floor
+if live_filters["complete_only"]:
+    mask &= df[CORE_COLUMNS].notna().all(axis=1)
 fdf = df[mask].copy()
-_sync_filters_to_query()
 
 # Human-readable summary of everything currently narrowing the dataset.
 active_filters = []
@@ -1326,7 +1519,7 @@ if selected_methods and len(selected_methods) < len(ALL_METHODS):
         else f"{len(selected_methods)} methods"
     )
 if dist_limit < MAX_DIST:
-    active_filters.append(f"within {dist_limit:,.0f} pc")
+    active_filters.append(f"within {dist_limit * distance_factor:,.0f} {distance_suffix}")
 if not keep_unknown_dist:
     active_filters.append("known distance only")
 if hz_filter:
@@ -1334,135 +1527,341 @@ if hz_filter:
 if esi_floor > 0:
     active_filters.append(f"ESI ≥ {esi_floor:.2f}")
 
-if fdf.empty:
-    detail = (" · ".join(active_filters)) if active_filters else ""
+if live_filters["complete_only"]:
+    active_filters.append("Complete measurements")
+
+with st.container(key="results-controls"):
+    filter_col, count_col = st.columns([1, 3], vertical_alignment="center")
+    with filter_col:
+        label = f"Filters · {len(active_filters)} active" if active_filters else "Filters"
+        st.button(label, icon=":material/tune:", key="open_filters", on_click=show_filters,
+                  help="Keyboard shortcut: F", width="stretch")
+    with count_col:
+        st.markdown(f"**{len(fdf):,}** of {len(df):,} planets · {fdf[HOST].nunique():,} systems")
+        if active_filters:
+            st.caption(" · ".join(active_filters))
+
+if st.session_state.get("filter_dialog_open"):
+    filters_drawer()
+
+if view == "Profile" and not fdf.empty:
+    profile_names = set(fdf[NAME])
+    if st.session_state.get("profile_pick") not in profile_names:
+        st.session_state["profile_pick"] = fdf.sort_values(ESI, ascending=False)[NAME].iloc[0]
+    if st.session_state.get("profile_rival") not in profile_names - {st.session_state["profile_pick"]}:
+        st.session_state["profile_rival"] = "— none —"
+_sync_filters_to_query()
+
+if fdf.empty and view not in {"Saved", "Learn"}:
     st.warning("**No planets match the current filters.**")
-    if detail:
-        st.caption(f"Active filters: {detail}")
-    if st.button("Relax filters", type="primary"):
-        reset_filters()
-        st.rerun()
-    st.info("Widen the filters in the sidebar, or press **Reset filters**, to continue.")
+    st.button("Relax filters", type="primary", on_click=reset_filters)
+    st.info("Try a wider distance range, more discovery methods, or fewer measurement requirements.")
     st.stop()
 
 # --- HEADLINE METRICS ----------------------------------------------------
-latest_year = int(fdf[YEAR].max())
-this_year = int((fdf[YEAR] == latest_year).sum())
-prev_year = int((fdf[YEAR] == latest_year - 1).sum())
+if not fdf.empty and view not in {"Saved", "Learn"}:
+    latest_year = int(fdf[YEAR].max())
+    this_year = int((fdf[YEAR] == latest_year).sum())
+    prev_year = int((fdf[YEAR] == latest_year - 1).sum())
 
-hz_count = int(fdf[HZ_STATUS].isin(["Conservative", "Optimistic"]).sum())
-hz_conservative = int((fdf[HZ_STATUS] == "Conservative").sum())
+    hz_count = int(fdf[HZ_STATUS].isin(["Conservative", "Optimistic"]).sum())
+    hz_conservative = int((fdf[HZ_STATUS] == "Conservative").sum())
 
-best_esi_label, best_esi_help = "—", "No planet in this selection has a published radius and temperature."
-best_esi_name = "no scored planet"
-best_esi_status = "unknown zone"
-if fdf[ESI].notna().any():
-    best = fdf.loc[fdf[ESI].idxmax()]
-    best_esi_label = f"{best[ESI]:.3f}"
-    best_esi_help = f"{best[NAME]} — the closest match to Earth in this selection."
-    best_esi_name = html.escape(str(best[NAME]))
-    best_esi_status = html.escape(str(best[HZ_STATUS]).lower())
+    best_esi_label, best_esi_help = "—", "No planet in this selection has a published radius and temperature."
+    if fdf[ESI].notna().any():
+        best = fdf.loc[fdf[ESI].idxmax()]
+        best_esi_label = f"{best[ESI]:.3f}"
+        best_esi_help = f"{best[NAME]} — the closest match to Earth in this selection."
 
-metric_row = st.container(key="headline-metrics")
-m1, m2, m3, m4, m5 = metric_row.columns(5)
-m1.metric(
-    "Planets shown",
-    f"{len(fdf):,}",
-    delta=(f"{len(fdf) - len(df):,} from filters" if len(fdf) < len(df) else None),
-    delta_color="off",
-    delta_arrow="off",
-    help=f"Out of {len(df):,} confirmed planets in the archive.",
-    icon=":material/public:",
-)
-m2.metric("Planetary systems", f"{fdf[HOST].nunique():,}",
-          help="Distinct host stars in the current selection.",
-          icon=":material/hub:")
-m3.metric(
-    "In the habitable zone",
-    f"{hz_count:,}",
-    delta=f"{hz_conservative:,} conservative" if hz_conservative else None,
-    delta_color="off",
-    delta_arrow="off",
-    help=HZ_HELP,
-    icon=":material/water_drop:",
-)
-m4.metric("Best Earth Similarity", best_esi_label, help=best_esi_help,
-          icon=":material/star:")
-m5.metric(
-    f"Discovered in {latest_year}",
-    f"{this_year:,}",
-    delta=f"{this_year - prev_year:+,} vs {latest_year - 1}" if prev_year else None,
-    icon=":material/trending_up:",
-)
+    with st.expander("Selection overview", expanded=False):
+        metric_row = st.container(key="headline-metrics")
+        m1, m2, m3, m4, m5 = metric_row.columns(5)
+        m1.metric(
+            "Planets shown",
+            f"{len(fdf):,}",
+            delta=(f"{len(fdf) - len(df):,} from filters" if len(fdf) < len(df) else None),
+            delta_color="off",
+            delta_arrow="off",
+            help=f"Out of {len(df):,} confirmed planets in the archive.",
+            icon=":material/public:",
+        )
+        m2.metric("Planetary systems", f"{fdf[HOST].nunique():,}",
+                  help="Distinct host stars in the current selection.",
+                  icon=":material/hub:")
+        m3.metric(
+            "In the habitable zone",
+            f"{hz_count:,}",
+            delta=f"{hz_conservative:,} conservative" if hz_conservative else None,
+            delta_color="off",
+            delta_arrow="off",
+            help=HZ_HELP,
+            icon=":material/water_drop:",
+        )
+        m4.metric("Best Earth Similarity", best_esi_label, help=best_esi_help,
+                  icon=":material/star:")
+        m5.metric(
+            f"Discovered in {latest_year}",
+            f"{this_year:,}",
+            delta=f"{this_year - prev_year:+,} vs {latest_year - 1}" if prev_year else None,
+            icon=":material/trending_up:",
+        )
 
 if active_filters:
-    st.caption(
-        f"**{len(fdf):,}** of {len(df):,} planets · filtered by "
-        + " · ".join(active_filters)
+    st.button("Clear all filters", on_click=reset_filters, key="clear_active_filters")
+
+with st.sidebar:
+    st.caption(f"{len(fdf):,} of {len(df):,} planets match your filters.")
+    st.download_button(
+        "Download selection (CSV)", data=fdf.to_csv(index=False).encode("utf-8"),
+        file_name="exoplanets_filtered.csv", mime="text/csv", width="stretch",
     )
 
-freshness = st.session_state["data_loaded_at"].astimezone().strftime("%d %b %Y, %H:%M %Z")
-st.markdown(
-    f"""
-    <div class="exploration-brief">
-        <div class="exploration-brief-copy">
-            <div class="exploration-brief-title">Mission brief</div>
-            <div class="exploration-brief-text">
-                You are scanning <strong>{len(fdf):,}</strong> worlds across
-                <strong>{fdf[HOST].nunique():,}</strong> systems.
-                Start with <strong>{best_esi_name}</strong> — the closest
-                Earth match in this slice, with an ESI of
-                <strong>{best_esi_label}</strong>.
-            </div>
-        </div>
-        <div class="exploration-brief-meta">
-            <span class="exploration-brief-pill">NASA archive live</span>
-            <span class="exploration-brief-pill">Updated {freshness}</span>
-            <span class="exploration-brief-pill">Best match: {best_esi_status}</span>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-st.download_button(
-    "Download current selection",
-    data=fdf.to_csv(index=False).encode("utf-8"),
-    file_name="exoplanets_filtered.csv",
-    mime="text/csv",
-    width="stretch",
-    help="Export the exact filtered slice currently shown in the dashboard.",
-)
+def change_page(offset):
+    st.session_state["catalogue_page"] += offset
+    st.session_state.pop("preview_planet", None)
 
-st.divider()
 
-(
-    tab_trends,
-    tab_sizes,
-    tab_ml,
-    tab_3d,
-    tab_hz,
-    tab_profile,
-) = st.tabs(
-    [
-        "📈 Trends",
-        "🌌 Size & orbit",
-        "🤖 Classes",
-        "🧭 3D view",
-        "💧 Habitable",
-        "🔭 Profile",
-    ]
-)
+def preview_planet(name):
+    st.session_state["preview_planet"] = name
+
+
+def enqueue_comparison(name):
+    tray = st.session_state.get("comparison_tray", [])
+    if name in tray:
+        st.session_state["comparison_tray"] = [planet for planet in tray if planet != name]
+    elif len(tray) < 4:
+        st.session_state["comparison_tray"] = [*tray, name]
+
+
+def open_comparison():
+    selected = st.session_state["comparison_tray"]
+    open_profile(selected[0], clear_filters=True)
+    st.session_state["profile_rival"] = selected[1]
+
+
+def show_summary_card(planet, key):
+    name = planet[NAME]
+    status = planet[HZ_STATUS]
+    radius = measurement(planet[RADIUS] / radius_divisor, ".2f", f" R{size_suffix}")
+    distance = measurement(planet[DISTANCE] * distance_factor, ",.1f", f" {distance_suffix}")
+    st.html(
+        f'<h4>{html.escape(name)}</h4>'
+        f'<p class="profile-sub">{html.escape(str(planet[HOST]))}</p>'
+        f'<p>{radius} radius · {distance} away</p>'
+        f'<p><span class="profile-chip chip-{hz_slug(status)}">{zone_label(status)}</span></p>'
+    )
+    st.button(f"Preview {name}", on_click=preview_planet, args=(name,), key=key, width="stretch")
+
+
+@st.dialog("Report a problem")
+def feedback():
+    st.write(f"Current view: **{st.session_state['active_view']}**")
+    st.caption("You can describe what happened and include steps to reproduce it. Avoid sharing personal information.")
+    title = f"Dashboard feedback: {st.session_state['active_view']}"
+    st.link_button("Open GitHub issue form",
+                   "https://github.com/akshh04/ExoplanetExplorer/issues/new?" + urlencode({"title": title}))
+
+
+with st.sidebar:
+    st.button("Report a problem", on_click=lambda: st.session_state.update(show_feedback=True))
+if st.session_state.pop("show_feedback", False) and not st.session_state.get("filter_dialog_open"):
+    feedback()
+
+if view == "Explore":
+    st.subheader("Explore confirmed planets")
+    with st.container(key="discovery-shortcuts"):
+        for col, preset in zip(st.columns(3), ["Habitable candidates", "Nearby worlds", "Recent discoveries"]):
+            col.button(preset, on_click=apply_preset, args=(preset,), width="stretch")
+    with st.expander("Guided discoveries"):
+        st.markdown("**Find a planet with a shorter year than Mercury.** Mercury orbits the Sun in 87.97 days.")
+        st.button("Explore short orbits", on_click=apply_preset, args=("Short years",))
+        st.markdown("**Look for neighbours.** The Nearby worlds shortcut includes confirmed planets within 50 parsecs.")
+        st.markdown("**Look for a multi-planet system.** Select that collection, open a planet, and compare the orbits around its star.")
+
+if view in {"Explore", "Saved"}:
+    is_saved = view == "Saved"
+    st.subheader("Saved planets" if is_saved else "Planet catalogue")
+    controls = st.columns(3)
+    if is_saved:
+        selection_name = controls[0].selectbox(
+            "Collection", ["All saved", *sorted(st.session_state["collections"])],
+        )
+        saved_names = st.session_state["favorites"]
+        if selection_name != "All saved":
+            saved_names = st.session_state["collections"][selection_name]
+        catalogue = df[df[NAME].isin(saved_names)]
+    else:
+        collection = controls[0].selectbox(
+            "Collection", ["All worlds", "Closest worlds", "Giant planets", "Unusual orbits", "Multi-planet systems"],
+            key="catalogue_collection",
+        )
+        catalogue = fdf
+        if collection == "Closest worlds":
+            catalogue = catalogue[catalogue[DISTANCE].le(50)]
+        elif collection == "Giant planets":
+            catalogue = catalogue[catalogue[RADIUS].ge(8)]
+        elif collection == "Unusual orbits":
+            catalogue = catalogue[catalogue["pl_orbeccen"].ge(0.6) | catalogue[PERIOD].lt(1)]
+        elif collection == "Multi-planet systems":
+            catalogue = catalogue[catalogue[HOST].isin(df[HOST].value_counts().loc[lambda counts: counts > 1].index)]
+
+    sort_options = {
+        "Earth similarity": (ESI, False), "Nearest first": (DISTANCE, True),
+        "Newest discoveries": (YEAR, False), "Latest publications": ("disc_pubdate", False),
+        "Name": (NAME, True),
+    }
+    sort_by = controls[1].selectbox("Sort planets", list(sort_options), key="catalogue_sort")
+    sort_key, ascending = sort_options[sort_by]
+    catalogue = catalogue.sort_values([sort_key, NAME] if sort_key != NAME else [NAME],
+                                      ascending=[ascending, True] if sort_key != NAME else ascending)
+    layout = controls[2].radio("Layout", ["Cards", "Table"], key="catalogue_layout", horizontal=True)
+    if sort_by == "Latest publications":
+        st.caption("Discovery publication date from NASA. Catalogue release dates are listed separately in Trends.")
+    if catalogue.empty:
+        st.info("Save planets from their profiles to fill this collection." if is_saved
+                else "No planets match this collection and the current filters.")
+    else:
+        st.caption(f"{len(catalogue):,} planets · {st.session_state['distance_unit']} · {st.session_state['size_unit']} units")
+        browse, detail = st.columns([2, 1], gap="medium")
+        with browse:
+            if layout == "Cards":
+                page_size = 12
+                last_page = (len(catalogue) - 1) // page_size
+                page = min(last_page, max(0, st.session_state.get("catalogue_page", 0)))
+                st.session_state["catalogue_page"] = page
+                start = page * page_size
+                for offset in range(start, min(start + page_size, len(catalogue)), 2):
+                    cards = st.columns(2)
+                    for col, (_, planet_row) in zip(cards, catalogue.iloc[offset:offset + 2].iterrows()):
+                        with col.container(border=True):
+                            show_summary_card(planet_row, f"preview_{offset}_{planet_row[NAME]}")
+                previous, position, next_page = st.columns(3, vertical_alignment="center")
+                previous.button("Previous", disabled=page == 0, on_click=change_page, args=(-1,))
+                position.caption(f"Page {page + 1} of {last_page + 1}")
+                next_page.button("Next", disabled=page == last_page, on_click=change_page, args=(1,))
+            else:
+                columns = [RADIUS, MASS, DISTANCE, YEAR, ESI, HZ_STATUS]
+                with st.expander("Table columns"):
+                    visible = st.multiselect("Measurements", columns, default=columns, key="catalogue_columns")
+                    st.button("Restore default columns",
+                              on_click=lambda: st.session_state.update(catalogue_columns=columns))
+                display = catalogue[[NAME, *visible]].copy()
+                for column, scale in [(RADIUS, 1 / radius_divisor), (MASS, 1 / mass_divisor), (DISTANCE, distance_factor)]:
+                    if column in display:
+                        display[column] *= scale
+                # A row index is only valid for the specific ordered result set.
+                table_id = hashlib.sha256(pd.util.hash_pandas_object(catalogue[NAME], index=False).values.tobytes()).hexdigest()[:16]
+                selection = st.dataframe(
+                    display, hide_index=True, height=465,
+                    key=f"planet_catalogue_{table_id}", on_select="rerun", selection_mode="single-row",
+                    column_config={
+                        NAME: st.column_config.TextColumn("Planet", pinned=True),
+                        RADIUS: st.column_config.NumberColumn(f"Radius (R{size_suffix})", format="%.2f"),
+                        MASS: st.column_config.NumberColumn(f"Mass (M{size_suffix})", format="%.2f"),
+                        DISTANCE: st.column_config.NumberColumn(f"Distance ({distance_suffix})", format="%.1f"),
+                        ESI: st.column_config.NumberColumn("Earth similarity", format="%.3f"),
+                    },
+                )
+                if selection.selection.rows:
+                    preview_planet(catalogue.iloc[selection.selection.rows[0]][NAME])
+        with detail:
+            selected_name = st.session_state.get("preview_planet")
+            matched = catalogue[catalogue[NAME] == selected_name]
+            with st.container(border=True, key="catalogue-preview"):
+                st.markdown("#### Planet preview")
+                if matched.empty:
+                    st.caption("Select a card or table row to see its details.")
+                else:
+                    row = matched.iloc[0]
+                    st.markdown(f"**{row[NAME]}**")
+                    st.caption(f"{row[HOST]} · {int(row[YEAR])} · {row[METHOD]}")
+                    st.write(zone_label(row[HZ_STATUS]))
+                    st.metric("Earth similarity", measurement(row[ESI], ".3f"))
+                    st.button(f"Open {row[NAME]}", type="primary", on_click=open_profile,
+                              args=(row[NAME], is_saved), width="stretch")
+                    selected = row[NAME] in st.session_state.get("comparison_tray", [])
+                    st.button("Remove from comparison" if selected else "Add to comparison",
+                              on_click=enqueue_comparison, args=(row[NAME],), width="stretch",
+                              disabled=not selected and len(st.session_state.get("comparison_tray", [])) >= 4)
+    if is_saved and st.session_state["favorites"]:
+        with st.expander("Manage collections"):
+            with st.form("planet_collection"):
+                label = st.text_input("Collection name", max_chars=40).strip()
+                names = st.multiselect("Saved planets", st.session_state["favorites"])
+                if st.form_submit_button("Save collection") and label and label != "All saved":
+                    st.session_state["collections"] = {**st.session_state["collections"], label: names}
+                    st.rerun()
+            if selection_name != "All saved" and st.button("Delete this collection"):
+                del st.session_state["collections"][selection_name]
+                st.rerun()
+    freshness = datetime.fromisoformat(str(df.attrs["fetched_at"])).strftime("%d %b %Y, %H:%M UTC")
+    st.caption(f"NASA archive · Fetched {freshness}")
+
+tray = st.session_state.get("comparison_tray", [])
+if tray and view in {"Explore", "Saved", "Profile"}:
+    with st.container(border=True, key="compare-tray"):
+        st.caption(f"Comparison · {len(tray)} of 4 planets")
+        st.write(" · ".join(tray))
+        compare_col, clear_col = st.columns(2)
+        compare_col.button("Compare with Earth", on_click=open_comparison, disabled=len(tray) < 2)
+        clear_col.button("Clear comparison", on_click=lambda: st.session_state.update(comparison_tray=[]))
+
+def chart_table(frame, label="View chart data"):
+    panel = st.expander(label, on_change="rerun")
+    if panel.open:
+        panel.dataframe(frame, hide_index=True)
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def archive_releases():
+    query = """
+        select pl_name, min(releasedate) as first_release
+        from ps
+        group by pl_name
+    """
+    with requests.get(ARCHIVE_URL, params={"query": query, "format": "csv"},
+                      timeout=(8, 35)) as response:
+        response.raise_for_status()
+        releases = pd.read_csv(StringIO(response.text))
+    if not {"pl_name", "first_release"}.issubset(releases.columns):
+        raise ValueError("NASA did not return planet release dates.")
+    releases["first_release"] = pd.to_datetime(releases["first_release"], errors="coerce")
+    return (releases.dropna().sort_values("first_release", ascending=False).head(50)
+            .rename(columns={"pl_name": NAME, "first_release": "First archive release"}))
+
+
+if view == "Sky":
+    st.subheader("Where known planets are in the sky")
+    sky = fdf.dropna(subset=["ra", "dec"])
+    if sky.empty:
+        st.info("No sky coordinates are available in this selection.")
+    else:
+        fig = px.scatter(
+            sky, x="ra", y="dec", color=DISTANCE, hover_name=NAME, custom_data=[NAME],
+            labels={"ra": "Right ascension (°)", "dec": "Declination (°)", DISTANCE: "Distance (pc)"},
+            color_continuous_scale="Viridis", opacity=0.65,
+        )
+        fig.update_xaxes(autorange="reversed")
+        transparent(fig, height=CHART_H_TALL, uirevision="sky")
+        selected = st.plotly_chart(fig, key="sky_map", on_select="rerun", selection_mode="points", config=CHART_CONFIG)
+        if selected.selection.points:
+            name = selected.selection.points[0]["customdata"][0]
+            if name in set(fdf[NAME]):
+                st.button(f"Open {name}", on_click=open_profile, args=(name,))
+        st.caption(f"{len(sky):,} of {len(fdf):,} selected planets have sky coordinates. "
+                   "Right ascension increases to the left. Surveys target different areas of the sky.")
+        chart_table(sky[[NAME, HOST, "ra", "dec", DISTANCE]])
 
 # --- TAB 1: DISCOVERY TRENDS --------------------------------------------
-with tab_trends:
+if st.session_state["active_view"] == "Trends":
     st.subheader("The pace of discovery")
     st.markdown(
         "Since the first confirmed planets in the 1990s, the rate of discovery has "
         "skyrocketed — driven largely by space telescopes using the transit method."
     )
 
-    view = st.radio(
-        "View",
+    trend_mode = st.radio(
+        "Trend view",
         ["Per year", "Cumulative", "Share of year (%)"],
         horizontal=True,
         label_visibility="collapsed",
@@ -1475,22 +1874,22 @@ with tab_trends:
         .astype({YEAR: int})
     )
 
-    if view == "Cumulative":
+    if trend_mode == "Cumulative":
         pivot = yearly.pivot(index=YEAR, columns=METHOD_SHORT, values="Count").fillna(0)
         pivot = pivot.reindex(range(year_range[0], year_range[1] + 1), fill_value=0).cumsum()
         plot_df = pivot.reset_index().melt(
             id_vars=YEAR, var_name=METHOD_SHORT, value_name="Count"
         )
-        fig = px.area(plot_df, x=YEAR, y="Count", color=METHOD_SHORT, color_discrete_map=COLOR_MAP)
+        fig = px.area(plot_df, x=YEAR, y="Count", color=METHOD_SHORT, color_discrete_map=COLOR_MAP, pattern_shape=METHOD_SHORT)
         y_title = "Planets known (cumulative)"
     else:
         plot_df = yearly.copy()
         y_title = "Planets discovered"
-        if view == "Share of year (%)":
+        if trend_mode == "Share of year (%)":
             totals = plot_df.groupby(YEAR)["Count"].transform("sum")
             plot_df["Count"] = plot_df["Count"] / totals * 100
             y_title = "Share of discoveries (%)"
-        fig = px.bar(plot_df, x=YEAR, y="Count", color=METHOD_SHORT, color_discrete_map=COLOR_MAP)
+        fig = px.bar(plot_df, x=YEAR, y="Count", color=METHOD_SHORT, color_discrete_map=COLOR_MAP, pattern_shape=METHOD_SHORT)
 
     transparent(
         fig,
@@ -1501,7 +1900,17 @@ with tab_trends:
         height=CHART_H_TALL,
     )
     fig.update_xaxes(dtick=5, tickformat="d")
-    st.plotly_chart(fig, width="stretch", config=CHART_CONFIG)
+    if st.checkbox("Show a second chart for discovery methods"):
+        trend_panel, method_panel = st.columns([3, 2])
+        trend_panel.plotly_chart(fig, config=CHART_CONFIG)
+        methods = yearly.groupby(METHOD_SHORT)["Count"].sum().sort_values().reset_index()
+        method_chart = px.bar(methods, x="Count", y=METHOD_SHORT, orientation="h",
+                              color=METHOD_SHORT, color_discrete_map=COLOR_MAP)
+        transparent(method_chart, height=CHART_H_TALL, showlegend=False,
+                    xaxis_title="Planet discoveries", yaxis_title="Discovery method")
+        method_panel.plotly_chart(method_chart, config=CHART_CONFIG)
+    else:
+        st.plotly_chart(fig, width="stretch", config=CHART_CONFIG)
 
     by_method = (
         fdf[METHOD].value_counts().rename_axis(METHOD).reset_index(name="Planets")
@@ -1513,12 +1922,38 @@ with tab_trends:
         width="stretch",
         column_config={
             "Planets": st.column_config.NumberColumn(format="%d"),
-            "Share": st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=1),
+            "Share": st.column_config.ProgressColumn(format="percent", min_value=0, max_value=1),
         },
     )
 
+    st.caption("Discovery methods favour different planet sizes, periods and viewing angles.")
+    chart_table(plot_df, "View discovery chart data")
+    with st.expander("Discovery facilities"):
+        facilities = fdf.dropna(subset=["disc_facility"])
+        counts = facilities["disc_facility"].value_counts().head(12)
+        if not counts.empty:
+            selected_facility = st.selectbox("Facility or mission", counts.index.tolist())
+            timeline = (facilities[facilities["disc_facility"] == selected_facility]
+                        .groupby(YEAR).size().rename("Discoveries").reset_index())
+            cols = st.columns(2) if st.checkbox("Show chart and table side by side") else None
+            figure_area, table_area = cols if cols else (st.container(), st.container())
+            figure_area.line_chart(timeline, x=YEAR, y="Discoveries", y_label="Planet discoveries")
+            table_area.dataframe(timeline, hide_index=True)
+        else:
+            st.info("NASA has not supplied facility data for this selection.")
+    with st.expander("Recent catalogue releases"):
+        st.caption("The first release date in NASA’s Planetary Systems table is distinct from its discovery year.")
+        if st.button("Load NASA release dates"):
+            st.session_state["show_release_dates"] = True
+        if st.session_state.get("show_release_dates"):
+            try:
+                releases = archive_releases().merge(df[[NAME, YEAR]], on=NAME)
+                st.dataframe(releases, hide_index=True)
+            except (requests.RequestException, ValueError):
+                st.warning("NASA release dates are currently unavailable. Try again later.")
+
 # --- TAB 2: SIZE & ORBIT -------------------------------------------------
-with tab_sizes:
+if st.session_state["active_view"] == "Orbits":
     st.subheader("Orbital period vs. planet size")
     st.markdown(
         "Each dot is a world; our own planets are overlaid as stars for scale. "
@@ -1526,16 +1961,18 @@ with tab_sizes:
         "**super-Earths** through the middle."
     )
 
+    st.caption("Select a point to inspect it below and highlight it in supported charts.")
     ctrl1, ctrl2, ctrl3 = st.columns([2, 2, 1])
     with ctrl1:
         radius_range = st.slider(
             "Planet radius (Earth radii)", 0.0, 30.0, (0.0, 30.0), 0.5
         )
     with ctrl2:
+        st.session_state.setdefault("orbit_period_limit", 10_000)
         period_limit = st.select_slider(
             "Max orbital period (days)",
-            options=[10, 100, 1_000, 5_000, 10_000, 100_000],
-            value=10_000,
+            options=[10, 87.97, 100, 1_000, 5_000, 10_000, 100_000],
+            key="orbit_period_limit",
             format_func=lambda v: f"{v:,}",
         )
     with ctrl3:
@@ -1558,12 +1995,18 @@ with tab_sizes:
             color=METHOD_SHORT,
             color_discrete_map=COLOR_MAP,
             hover_name=NAME,
+            custom_data=[NAME],
             hover_data={TEMP: ":.0f", DISTANCE: ":.1f"},
             log_x=True,
             log_y=True,
             opacity=0.55,
         )
         fig.update_traces(marker=dict(size=6, line=dict(width=0)))
+        highlighted = scatter_df[scatter_df[NAME] == st.session_state.get("highlighted_planet")]
+        if not highlighted.empty:
+            fig.add_scatter(x=highlighted[PERIOD], y=highlighted[RADIUS], mode="markers",
+                            marker=dict(size=14, symbol="diamond-open", color=CHART_FONT),
+                            name="Selected planet", hoverinfo="skip")
 
         hidden = []
         if show_solar:
@@ -1592,18 +2035,30 @@ with tab_sizes:
                     )
                 )
 
-        transparent(fig, margin=dict(t=10, b=0, l=0, r=0), height=CHART_H_SCATTER)
+        transparent(fig, margin=dict(t=10, b=0, l=0, r=0), height=CHART_H_SCATTER, uirevision="orbits")
         fig.update_xaxes(title_text="Orbital period (days, log scale)")
         fig.update_yaxes(title_text="Radius (Earth radii, log scale)")
-        st.plotly_chart(fig, width="stretch", config=CHART_CONFIG)
+        selected = st.plotly_chart(
+            fig, width="stretch", config=CHART_CONFIG, key="orbit_selection",
+            on_select="rerun", selection_mode="points",
+        )
+        if selected.selection.points:
+            point_data = selected.selection.points[0].get("customdata", [])
+            if point_data and point_data[0] in set(scatter_df[NAME]):
+                chosen = point_data[0]
+                st.session_state["highlighted_planet"] = chosen
+                row = scatter_df[scatter_df[NAME] == chosen].iloc[0]
+                st.info(f"{chosen} · {row[PERIOD]:,.2f} days · {row[RADIUS]:.2f} Earth radii")
+                st.button(f"Open {chosen}", on_click=open_profile, args=(chosen,))
 
         cap = f"{len(scatter_df):,} planets plotted."
         if hidden:
             cap += f" Outside the current window: {', '.join(hidden)}."
         st.caption(cap)
+        chart_table(scatter_df[[NAME, PERIOD, RADIUS, METHOD, TEMP]])
 
 # --- TAB 3: K-MEANS CLASSIFICATION ---------------------------------------
-with tab_ml:
+if st.session_state["active_view"] == "Classes":
     st.subheader("Unsupervised classification (K-Means)")
     st.markdown(
         "Rather than hand-defining what a *hot Jupiter* or *super-Earth* is, K-Means "
@@ -1616,7 +2071,7 @@ with tab_ml:
 
     n_clusters = st.slider("Number of groups (k)", 2, 6, 3)
 
-    if len(ml_df) <= n_clusters:
+    if len(ml_df[[MASS, RADIUS]].drop_duplicates()) < n_clusters:
         st.warning(
             "Not enough planets with both a mass and a radius to run clustering. "
             "Widen the filters in the sidebar."
@@ -1664,6 +2119,11 @@ with tab_ml:
             opacity=0.7,
         )
         fig.update_traces(marker=dict(size=6, line=dict(width=0)))
+        highlighted = ml_df[ml_df[NAME] == st.session_state.get("highlighted_planet")]
+        if not highlighted.empty:
+            fig.add_scatter(x=highlighted[MASS], y=highlighted[RADIUS], mode="markers",
+                            marker=dict(size=14, symbol="diamond-open", color=CHART_FONT),
+                            name="Selected planet", hoverinfo="skip")
         # One entry per row: the group names run long enough to overrun a
         # half-width column.
         transparent(
@@ -1692,8 +2152,10 @@ with tab_ml:
             f"({len(fdf) - len(ml_df):,} of the current selection do not and are excluded)."
         )
 
+        chart_table(ml_df[[NAME, MASS, RADIUS, "Group Name"]])
+
 # --- TAB 4: 3D EXPLORER --------------------------------------------------
-with tab_3d:
+if st.session_state["active_view"] == "3D":
     st.subheader("Three-dimensional view")
     st.markdown(
         "Rotate and zoom to see how radius, orbital period and equilibrium "
@@ -1705,6 +2167,15 @@ with tab_3d:
 
     if td_df.empty:
         st.info("No planets in the current selection have all three parameters.")
+    elif st.radio("Display", ["3D", "2D"], horizontal=True) == "2D":
+        flat = td_df.sample(2500, random_state=42) if len(td_df) > 2500 else td_df
+        fig = px.scatter(flat, x=PERIOD, y=RADIUS, color=TEMP, hover_name=NAME,
+                         log_x=True, log_y=True, color_continuous_scale="Inferno",
+                         render_mode="svg", opacity=0.65)
+        transparent(fig, height=CHART_H_TALL, uirevision="flat")
+        st.plotly_chart(fig, config=CHART_CONFIG)
+        st.caption(f"Colour shows temperature. Plotting {len(flat):,} of {len(td_df):,} planets with all three measurements.")
+        chart_table(td_df[[NAME, PERIOD, RADIUS, TEMP]])
     else:
         # 3D scenes get sluggish past a few thousand markers, so sample.
         MAX_POINTS = 2500
@@ -1737,6 +2208,11 @@ with tab_3d:
             **kwargs,
         )
         fig.update_traces(marker=dict(size=3.5, line=dict(width=0)))
+        highlighted = td_df[td_df[NAME] == st.session_state.get("highlighted_planet")]
+        if not highlighted.empty:
+            fig.add_scatter3d(x=highlighted[PERIOD], y=highlighted[RADIUS], z=highlighted[TEMP],
+                              mode="markers", marker=dict(size=9, color=CHART_FONT, symbol="diamond-open"),
+                              text=highlighted[NAME], hoverinfo="text", name="Selected planet")
 
         # Flat, top-level magic-underscore kwargs — nesting these as dict
         # values (e.g. scene=dict(xaxis=dict(title=dict(...)))) silently
@@ -1771,6 +2247,7 @@ with tab_3d:
             legend_entrywidth=0.45,
             legend_itemsizing="constant",
             scene_domain_y=(0, 0.75),
+            uirevision="3d",
             coloraxis_colorbar_orientation="h",
             coloraxis_colorbar_y=-0.02,
             coloraxis_colorbar_thickness=12,
@@ -1781,15 +2258,16 @@ with tab_3d:
             height=CHART_H_3D + 60,
             **scene_kwargs,
         )
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, width="stretch", config=CHART_CONFIG)
 
         if len(sampled) < len(td_df):
             st.caption(f"Showing a random sample of {len(sampled):,} of {len(td_df):,} planets to keep the 3D view responsive.")
         else:
             st.caption(f"{len(sampled):,} planets plotted.")
+        chart_table(sampled[[NAME, PERIOD, RADIUS, TEMP]])
 
 # --- TAB 5: HABITABLE WORLDS ---------------------------------------------
-with tab_hz:
+if st.session_state["active_view"] == "Habitable":
     st.subheader("The search for another Earth")
     st.markdown(
         "Two ways to shortlist candidates: the **habitable zone** computed from each "
@@ -1938,8 +2416,31 @@ with tab_hz:
             "for follow-up, not a list of habitable planets."
         )
 
+class ArchiveReferenceParser(HTMLParser):
+    href = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a" and self.href is None:
+            self.href = dict(attrs).get("href")
+
+
+def archive_reference(value):
+    if not isinstance(value, str):
+        return None
+    parser = ArchiveReferenceParser()
+    parser.feed(value)
+    if not parser.href:
+        return None
+    try:
+        url = urljoin(ARCHIVE_HOME, parser.href)
+        target = urlsplit(url)
+    except ValueError:
+        return None
+    return url if target.scheme == "https" and target.hostname else None
+
+
 # --- TAB 6: PLANET PROFILE -----------------------------------------------
-with tab_profile:
+if st.session_state["active_view"] == "Profile":
     st.subheader("Individual planet profile")
     st.markdown(
         "Pick any world in the current selection to see its measurements, how it "
@@ -1978,37 +2479,53 @@ with tab_profile:
         fdf[fdf[NAME] == rival_pick].iloc[0] if rival_pick != NO_RIVAL else None
     )
 
-    def fmt(value, spec: str, suffix: str = "") -> str:
-        """Format a possibly-missing measurement for display."""
-        if pd.isna(value):
-            return "-"
-        return f"{value:{spec}}{suffix}"
-
     status = planet[HZ_STATUS]
     chip = HZ_COLORS.get(status, HZ_COLORS["Unknown"])
     st.markdown(
         f"""<div class="profile-head">
-              <span class="profile-name">{planet[NAME]}</span>
+              <span class="profile-name">{html.escape(str(planet[NAME]))}</span>
               <span class="profile-chip chip-{hz_slug(status)}">
-                {status} zone
+                {zone_label(status)}
               </span>
             </div>
             <div class="profile-sub">
-              Orbits <b>{planet[HOST]}</b> &middot; found in
-              <b>{int(planet[YEAR])}</b> by <b>{planet[METHOD]}</b>
+              Orbits <b>{html.escape(str(planet[HOST]))}</b> &middot; found in
+              <b>{int(planet[YEAR])}</b> by <b>{html.escape(str(planet[METHOD]))}</b>
             </div>""",
         unsafe_allow_html=True,
     )
 
+    def toggle_saved():
+        saved = list(st.session_state["favorites"])
+        if pick in saved:
+            saved.remove(pick)
+            st.session_state["collections"] = {
+                name: [world for world in planets if world != pick]
+                for name, planets in st.session_state["collections"].items()
+            }
+        else:
+            saved.append(pick)
+        st.session_state["favorites"] = saved
+
+    st.button("Remove saved planet" if pick in st.session_state["favorites"] else "Save planet",
+              on_click=toggle_saved, key="save_planet")
+    st.caption("Saved planets and collections are stored in this browser.")
+    selected = pick in st.session_state.get("comparison_tray", [])
+    st.button("Remove from comparison" if selected else "Add to comparison",
+              on_click=enqueue_comparison, args=(pick,), key="profile_compare",
+              disabled=not selected and len(st.session_state.get("comparison_tray", [])) >= 4)
+    known = sum(pd.notna(planet[c]) for c in [RADIUS, MASS, PERIOD, TEMP, DISTANCE, SEMI_MAJOR])
+    st.caption(f"Data coverage: {known}/6 core measurements published. A dash means unknown, not zero.")
+
     p1, p2, p3, p4 = st.columns(4)
-    p1.metric("Radius", fmt(planet[RADIUS], ".2f", " R" + EARTH_SYM),
-              help="Earth radii. Earth = 1.")
-    p2.metric("Mass", fmt(planet[MASS], ".2f", " M" + EARTH_SYM),
-              help="Earth masses. Earth = 1.")
-    p3.metric("Orbital period", fmt(planet[PERIOD], ",.2f", " d"))
+    p1.metric("Radius", measurement(planet[RADIUS] / radius_divisor, ".2f", f" R{size_suffix}"),
+              help=f"Radius in {st.session_state['size_unit']} radii.")
+    p2.metric("Mass", measurement(planet[MASS] / mass_divisor, ".2f", f" M{size_suffix}"),
+              help=f"Mass in {st.session_state['size_unit']} masses.")
+    p3.metric("Orbital period", measurement(planet[PERIOD], ",.2f", " d"))
     p4.metric(
         "Distance",
-        fmt(planet[DISTANCE], ",.1f", " pc"),
+        measurement(planet[DISTANCE] * distance_factor, ",.1f", f" {distance_suffix}"),
         help=(f"{planet[DISTANCE] * 3.26156:,.1f} light-years away."
               if pd.notna(planet[DISTANCE]) else "No published distance."),
     )
@@ -2016,14 +2533,14 @@ with tab_profile:
     p5, p6, p7, p8 = st.columns(4)
     p5.metric(
         "Equilibrium temp",
-        fmt(planet[TEMP], ",.0f", " K"),
+        measurement(planet[TEMP], ",.0f", " K"),
         help=(f"{planet[TEMP] - 273.15:,.0f} degrees C"
               if pd.notna(planet[TEMP]) else "No published temperature."),
     )
-    p6.metric("Insolation", fmt(planet[INSOLATION], ",.2f", " S" + EARTH_SYM),
+    p6.metric("Insolation", measurement(planet[INSOLATION], ",.2f", " S" + EARTH_SYM),
               help="Starlight received relative to Earth. Earth = 1.")
-    p7.metric("Semi-major axis", fmt(planet[SEMI_MAJOR], ",.4f", " au"))
-    p8.metric("Earth Similarity", fmt(planet[ESI], ".3f"),
+    p7.metric("Semi-major axis", measurement(planet[SEMI_MAJOR], ",.4f", " au"))
+    p8.metric("Earth Similarity", measurement(planet[ESI], ".3f"),
               help="Two-parameter ESI from radius and equilibrium temperature. 1.0 = Earth.")
 
     st.markdown("##### Where it orbits, against its star's habitable zone")
@@ -2032,7 +2549,7 @@ with tab_profile:
     a_planet = planet[SEMI_MAJOR]
     bounds_known = not any(
         pd.isna(v) for v in (inner_o, inner_c, outer_c, outer_o, a_planet)
-    ) and a_planet > 0 and inner_o > 0
+    ) and min(inner_o, inner_c, outer_c, outer_o, a_planet) > 0 and status != "Unknown"
 
     if not bounds_known:
         st.info(
@@ -2040,7 +2557,7 @@ with tab_profile:
             "distance needed to place a habitable zone."
         )
     else:
-        siblings = fdf[(fdf[HOST] == planet[HOST]) & fdf[SEMI_MAJOR].notna()]
+        siblings = df[(df[HOST] == planet[HOST]) & df[SEMI_MAJOR].gt(0)]
         hz = go.Figure()
         # Optimistic band first, so the conservative band paints on top of it.
         hz.add_shape(type="rect", x0=inner_o, x1=outer_o, y0=0.28, y1=0.72,
@@ -2095,6 +2612,28 @@ with tab_profile:
             f"This planet orbits at {a_planet:.4f} au."
         )
 
+    system_panel = st.expander("System diagram", on_change="rerun")
+    if system_panel.open:
+        with system_panel:
+            system_orbits = df[(df[HOST] == planet[HOST]) & df[SEMI_MAJOR].gt(0)].sort_values(SEMI_MAJOR)
+            if system_orbits.empty:
+                st.info("The archive has no orbital distances for this system.")
+            else:
+                diagram = go.Figure()
+                angles = np.linspace(0, 2 * np.pi, 100)
+                for _, world in system_orbits.iterrows():
+                    radius = np.log10(1 + world[SEMI_MAJOR] * 10)
+                    diagram.add_scatter(x=radius * np.cos(angles), y=radius * np.sin(angles),
+                                        mode="lines", name=world[NAME],
+                                        hovertemplate=f"{html.escape(world[NAME])} · {world[SEMI_MAJOR]:.3g} au<extra></extra>")
+                diagram.add_scatter(x=[0], y=[0], mode="markers", name=str(planet[HOST]),
+                                    marker=dict(color="#f5c065", size=12, symbol="star"))
+                transparent(diagram, height=360, xaxis_visible=False, yaxis_visible=False,
+                            yaxis_scaleanchor="x", yaxis_scaleratio=1, margin=dict(l=0, r=0, t=30, b=0))
+                st.plotly_chart(diagram, config=CHART_CONFIG)
+                st.caption("Schematic with compressed distances. Circular paths illustrate the relative ordering of published semi-major axes.")
+                st.dataframe(system_orbits[[NAME, SEMI_MAJOR]], hide_index=True)
+
     c_left, c_right = st.columns(2)
     with c_left:
         st.markdown("##### Size against Earth")
@@ -2121,11 +2660,10 @@ with tab_profile:
 
     with c_right:
         st.markdown("##### The rest of this system")
-        system = fdf[fdf[HOST] == planet[HOST]]
+        system = df[df[HOST] == planet[HOST]]
         if len(system) == 1:
             st.info(
-                f"{planet[HOST]} has just this one known planet "
-                "in the current selection."
+                f"NASA lists one confirmed planet for {planet[HOST]}."
             )
         else:
             st.dataframe(
@@ -2142,118 +2680,131 @@ with tab_profile:
                 },
             )
 
-    if rival is not None:
-        st.markdown("##### Head to head")
-
-        def cell(row, column, spec: str) -> str:
-            """One formatted measurement, or a dash when unpublished."""
-            if row is None:
-                return "\u2014"
-            value = row[column]
-            return "\u2014" if pd.isna(value) else f"{value:{spec}}"
-
-        # Earth's own reference row: equilibrium temperature (not the 288 K
-        # surface value) so it is comparable with the archive's figures.
-        earth = {
-            "Radius (R" + EARTH_SYM + ")": "1.00",
-            "Mass (M" + EARTH_SYM + ")": "1.00",
-            "Orbital period (days)": "365.25",
-            "Semi-major axis (au)": "1.0000",
-            "Equilibrium temp (K)": f"{EARTH_EQ_TEMP:.0f}",
-            "Insolation (S" + EARTH_SYM + ")": "1.00",
-            "Earth Similarity": "1.000",
-            "Habitable zone": "Conservative",
-            "Distance (pc)": "0.0",
-            "Discovered": "\u2014",
-        }
-
-        def column_for(row) -> list:
-            return [
-                cell(row, RADIUS, ".2f"),
-                cell(row, MASS, ".2f"),
-                cell(row, PERIOD, ",.2f"),
-                cell(row, SEMI_MAJOR, ",.4f"),
-                cell(row, TEMP, ",.0f"),
-                cell(row, INSOLATION, ",.2f"),
-                cell(row, ESI, ".3f"),
-                str(row[HZ_STATUS]),
-                cell(row, DISTANCE, ",.1f"),
-                f"{int(row[YEAR])} \u00b7 {row[METHOD]}",
+    comparison_names = list(dict.fromkeys([
+        pick, *([rival_pick] if rival is not None else []), *st.session_state.get("comparison_tray", []),
+    ]))[:4]
+    comparison_rows = df.set_index(NAME).reindex(comparison_names)
+    if len(comparison_names) > 1:
+        st.markdown("### Compare with Earth")
+        measure_specs = [
+            (RADIUS, f"Radius (R{size_suffix})", 1 / radius_divisor, 1.0, ".3g"),
+            (MASS, f"Mass (M{size_suffix})", 1 / mass_divisor, 1.0, ".3g"),
+            (PERIOD, "Orbital period (days)", 1.0, 365.25, ",.2f"),
+            (SEMI_MAJOR, "Semi-major axis (au)", 1.0, 1.0, ".4f"),
+            (TEMP, "Equilibrium temperature (K)", 1.0, EARTH_EQ_TEMP, ".0f"),
+            (INSOLATION, "Insolation (Earth = 1)", 1.0, 1.0, ".2f"),
+            (ESI, "Earth similarity", 1.0, 1.0, ".3f"),
+            (DISTANCE, f"Distance ({distance_suffix})", distance_factor, 0.0, ",.1f"),
+        ]
+        comparison = {"Measure": [label for _, label, *_ in measure_specs], "Earth": [
+            measurement(earth * factor, spec) for _, _, factor, earth, spec in measure_specs
+        ]}
+        for name, row in comparison_rows.iterrows():
+            comparison[name] = [
+                measurement(row[column] * factor, spec)
+                for column, _, factor, _, spec in measure_specs
             ]
+        layout = st.radio("Comparison layout", ["One at a time", "All planets"], horizontal=True)
+        if layout == "One at a time":
+            against = st.selectbox("Show planet beside Earth", comparison_names)
+            table = {key: comparison[key] for key in ["Measure", "Earth", against]}
+        else:
+            table = comparison
+        st.dataframe(pd.DataFrame(table), hide_index=True, column_config={"Measure": st.column_config.TextColumn(pinned=True)})
+        st.caption("Earth reference temperature: 255 K equilibrium temperature.")
+        summary = go.Figure(go.Table(
+            header=dict(values=list(table), fill_color=SIDEBAR_BG, font=dict(color=TEXT_COLOR)),
+            cells=dict(values=list(table.values()), fill_color=CARD_BG, font=dict(color=TEXT_COLOR)),
+        ))
+        summary.update_layout(title="Exoplanet comparison · NASA Exoplanet Archive", height=350,
+                              paper_bgcolor=PAGE_BG, font_color=TEXT_COLOR, margin=dict(l=0, r=0, t=50, b=0))
+        with st.expander("Export comparison as an image"):
+            st.caption("Choose Download plot as a PNG in the chart toolbar.")
+            st.plotly_chart(summary, config=CHART_CONFIG)
 
-        head_to_head = pd.DataFrame(
-            {
-                "Measure": list(earth.keys()),
-                "Earth": list(earth.values()),
-                pick: column_for(planet),
-                rival_pick: column_for(rival),
-            }
-        )
-        st.dataframe(head_to_head, hide_index=True, width="stretch",
-                     column_config={"Measure": st.column_config.TextColumn(width="medium")})
-        st.caption(
-            "Earth's row uses its equilibrium temperature (255 K), not its 288 K "
-            "surface temperature, so the comparison is like for like."
-        )
+    with st.expander("Measurements and sources"):
+        st.caption("NASA publishes uncertainty ranges and source links for some values. "
+                   "Mass can be measured, a minimum mass, or estimated.")
+        for column, label, raw in zip(CORE_COLUMNS, CORE_LABELS, [
+            "pl_rade", "pl_bmasse", "pl_orbper", "pl_eqt", "sy_dist", "pl_orbsmax",
+        ]):
+            lower, upper = planet.get(raw + "err2"), planet.get(raw + "err1")
+            measured = measurement(planet[column], ".5g")
+            deviations = "" if pd.isna(lower) or pd.isna(upper) else f" ({lower:+.3g}, {upper:+.3g})"
+            source = archive_reference(planet.get(raw + "_reflink"))
+            st.write(f"**{label}** · {measured}{deviations} · {column}")
+            if source:
+                st.link_button(f"Source for {label.lower()}", source)
+
+    similarity_panel = st.expander("Find similar planets", on_change="rerun")
+    if similarity_panel.open:
+        with similarity_panel:
+            features = st.multiselect("Compare measurements", [RADIUS, TEMP, PERIOD], default=[RADIUS, TEMP])
+            if features and planet[features].notna().all() and planet[features].gt(0).all():
+                eligible = df[df[features].gt(0).all(axis=1) & df[NAME].ne(pick)].copy()
+                ratios = eligible[features].divide(planet[features].astype(float), axis="columns")
+                similar = eligible.loc[np.log(ratios).pow(2).mean(axis=1).nsmallest(5).index]
+                st.caption("Ranked by relative differences in the selected measurements.")
+                for other in similar[NAME]:
+                    st.button(f"Open similar planet {other}", on_click=open_profile, args=(other, True))
+            else:
+                st.info("Choose measurements that this planet has published.")
+
+    summary_panel = st.expander("Planet summary image", on_change="rerun")
+    if summary_panel.open:
+        with summary_panel:
+            summary_items = [
+                f"{planet[HOST]} system · Discovered {int(planet[YEAR])}",
+                f"Radius: {measurement(planet[RADIUS] / radius_divisor, '.3g', f' R{size_suffix}')}",
+                f"Mass: {measurement(planet[MASS] / mass_divisor, '.3g', f' M{size_suffix}')}",
+                f"Distance: {measurement(planet[DISTANCE] * distance_factor, ',.1f', f' {distance_suffix}')}",
+                zone_label(status),
+            ]
+            summary = go.Figure(go.Table(
+                header=dict(values=[html.escape(pick)], fill_color=SIDEBAR_BG, font=dict(color=TEXT_COLOR)),
+                cells=dict(values=[[html.escape(item) for item in summary_items]],
+                           fill_color=CARD_BG, font=dict(color=TEXT_COLOR)),
+            ))
+            summary.update_layout(title="NASA Exoplanet Archive", height=250, paper_bgcolor=PAGE_BG,
+                                  font_color=TEXT_COLOR, margin=dict(l=0, r=0, t=50, b=0))
+            st.caption("Choose Download plot as a PNG in the chart toolbar.")
+            st.plotly_chart(summary, config=CHART_CONFIG)
 
     st.link_button(
         "Open this planet in the NASA Exoplanet Archive",
         "https://exoplanetarchive.ipac.caltech.edu/overview/"
-        + pick.replace(" ", "%20"),
+        + quote(str(pick), safe=""),
     )
+
+if st.session_state["active_view"] == "Learn":
+    st.subheader("A field guide to other worlds")
+    st.markdown("You don’t need an astronomy degree to explore. Start with these essentials.")
+    for title, explanation in [
+        ("How do we find planets?", "**Transits** are tiny dips in starlight when a planet crosses its star. "
+         "**Radial velocity** measures a star’s wobble from a planet’s gravity. "
+         "**Imaging** captures light from a planet directly; **microlensing** uses gravitational magnification. "
+         "Different methods favour different worlds, so the catalogue is not an unbiased census."),
+        ("What does Earth similarity mean?", "The Earth Similarity Index here combines radius and equilibrium "
+         "temperature. One means a match to those two Earth values. It does not measure atmosphere, water or life."),
+        ("What is a habitable zone?", "An estimated range of orbital distances where an Earth-like atmosphere "
+         "could allow liquid surface water. Conservative and optimistic bands use different model limits. "
+         "Being in the zone does not establish habitability."),
+        ("How do I read the units?", "**R⊕ / M⊕:** Earth radii / Earth masses. **au:** Earth’s average distance "
+         "from the Sun. **pc:** parsecs; multiply by 3.26 for light-years. **K:** kelvin; subtract 273.15 for Celsius. "
+         "Equilibrium temperature is a radiation-balance estimate, not a measured surface temperature."),
+        ("Why are some values missing?", "Many discoveries constrain only some measurements. Unknown values "
+         "are shown as dashes; charts exclude planets missing their required axes. An ESI threshold excludes "
+         "unscored planets. K-Means groups are exploratory statistical clusters, not official planet classes."),
+        ("What can I do with the charts?", "Hover or tap a point for details. Use the chart toolbar to zoom, "
+         "reset or download an image. Use the filters for a focused selection and download its CSV from the "
+         "sidebar. The 3D view samples large selections for performance."),
+    ]:
+        with st.expander(title):
+            st.markdown(explanation)
+    st.link_button("Explore the NASA source catalogue", ARCHIVE_HOME)
 
 st.divider()
 st.caption(
     "Data provided by the NASA Exoplanet Archive, operated by the California Institute "
     "of Technology under contract with the National Aeronautics and Space Administration."
-)
-
-# Switching tabs is a client-side change, so a chart built during the last
-# script run while its tab was hidden measured a zero-width container and fell
-# back to Plotly's 700px default -- badly clipped inside a 348px phone column.
-# Re-lay-out any visible chart whose SVG no longer matches its box, once per
-# tab click. Guarded by an actual width mismatch so nothing happens on the
-# common path.
-st.html(
-    """
-<script>
-(function () {
-  if (document.__plotlyTabFix) return;   // survive Streamlit reruns
-  document.__plotlyTabFix = true;
-
-  const fix = () => {
-    const Plotly = window.Plotly;
-    if (!Plotly) return;
-    document.querySelectorAll('.js-plotly-plot').forEach((el) => {
-      if (el.offsetParent === null) return;               // still hidden
-      const box = el.getBoundingClientRect().width;
-      const svg = el.querySelector('.svg-container');
-      if (!svg || box <= 0) return;
-      if (Math.abs(svg.getBoundingClientRect().width - box) > 4) {
-        // Relayout against Streamlit's wrapper, which already carries the
-        // figure's declared height. A window resize event leaves WebGL
-        // scenes stuck, and Plotly.Plots.resize() reads the plot's own
-        // collapsed box and locks that in -- it left the 3D view 130px
-        // shorter than the space reserved for it.
-        const wrap = el.parentElement;
-        const h = wrap ? wrap.clientHeight : 0;
-        if (h > 0) {
-          Plotly.relayout(el, { width: wrap.clientWidth, height: h });
-        } else {
-          Plotly.Plots.resize(el);
-        }
-      }
-    });
-  };
-
-  document.addEventListener(
-    'click',
-    (e) => { if (e.target.closest('[role="tab"]')) setTimeout(fix, 90); },
-    true
-  );
-  setTimeout(fix, 400);
-})();
-</script>
-""",
-    unsafe_allow_javascript=True,
 )

@@ -1,0 +1,25 @@
+pl_name,hostname,discoverymethod,disc_year,pl_rade,pl_bmasse,pl_orbper,pl_orbsmax,pl_eqt,st_teff,st_lum,sy_dist
+Test World 0 b,Test Star 0,Transit,2000,0.8,1.0,10,0.05,240,5780,0,5
+Test World 1 b,Test Star 0,Radial Velocity,2001,1.1,2.0,30,1,250,5780,0,13
+Test World 2 b,Test Star 0,Imaging,2002,1.4,4.25,50,1.8,260,5780,0,21
+Test World 3 b,Test Star 1,Transit,2003,1.7,7.47,70,3,270,5780,0,29
+Test World 4 b,Test Star 1,Radial Velocity,2004,2.0,11.56,90,0.05,280,5780,0,37
+Test World 5 b,Test Star 1,Imaging,2005,2.3,16.43,110,1,290,5780,0,45
+Test World 6 b,Test Star 2,Transit,2006,2.6,22.03,130,1.8,300,5780,0,53
+Test World 7 b,Test Star 2,Radial Velocity,2007,2.9,28.33,150,3,310,5780,0,61
+Test World 8 b,Test Star 2,Imaging,2008,3.2,35.3,170,0.05,320,5780,0,69
+Test World 9 b,Test Star 3,Transit,2009,3.5,42.9,190,1,330,5780,0,77
+Test World 10 b,Test Star 3,Radial Velocity,2010,3.8,51.12,210,1.8,340,5780,0,85
+Test World 11 b,Test Star 3,Imaging,2011,4.1,59.93,230,3,350,5780,0,93
+Test World 12 b,Test Star 4,Transit,2012,4.4,69.33,250,0.05,360,5780,0,101
+Test World 13 b,Test Star 4,Radial Velocity,2013,4.7,79.29,270,1,370,5780,0,109
+Test World 14 b,Test Star 4,Imaging,2014,5.0,89.8,290,1.8,380,5780,0,117
+Test World 15 b,Test Star 5,Transit,2015,5.3,100.85,310,3,390,5780,0,125
+Test World 16 b,Test Star 5,Radial Velocity,2016,5.6,112.43,330,0.05,400,5780,0,133
+Test World 17 b,Test Star 5,Imaging,2017,5.9,124.53,350,1,410,5780,0,141
+Test World 18 b,Test Star 6,Transit,2018,6.2,137.13,370,1.8,420,5780,0,149
+Test World 19 b,Test Star 6,Radial Velocity,2019,6.5,150.24,390,3,430,5780,0,157
+Test World 20 b,Test Star 6,Imaging,2020,6.8,163.84,410,0.05,440,5780,0,165
+Test World 21 b,Test Star 7,Transit,2021,7.1,177.92,430,1,450,5780,0,
+Test World 22 b,Test Star 7,Radial Velocity,2022,7.4,192.48,450,1.8,,5780,0,181
+Test World 23 b,Test Star 7,Imaging,2023,,207.51,470,3,470,5780,0,189

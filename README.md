@@ -12,118 +12,34 @@ Index help identify candidates for further study; they do not establish that a p
 
 ## Quick tour
 
-1. Open the live dashboard. If Streamlit shows a sleeping-app page, use its wake-up button and
-   allow time for the app to start and fetch NASA's data.
-2. Use the sidebar to filter by discovery year, method, distance, or habitability.
-3. Explore discovery trends, size and orbit, planet classes, the 3D view, and habitable candidates.
-4. Open **Profile** to inspect a planet or compare two worlds against Earth. Use **Reset filters**
-   to return to the full catalogue, or **Refresh data from NASA** to fetch fresh data.
+1. Search the full catalogue by planet name, or open **Explore** and pick a collection.
+2. Open **Filters** beside the result count. The drawer applies changes together. On a laptop,
+   the sidebar also offers live filters, named filter sets, unit preferences and CSV export.
+3. Browse planets as cards or as a sortable table. Select a planet to preview it, open its
+   profile or add it to the comparison tray.
+4. Open **Charts** for discovery trends, size and orbit, statistical clusters, the 3D and 2D
+   explorers, habitable-zone candidates, and a sky map. **Learn** explains the science and units.
+5. Open **Saved** to organize bookmarked planets into collections. The browser remembers your
+   theme, units, catalogue layout and saved items. URLs record the current view, filters and the
+   primary profile comparison.
 
-## 🚀 Features
+Use **/** to focus search and **F** to open filters when focus is outside a form. On a phone,
+catalogue cards stack and comparisons start with one selected planet alongside Earth.
 
-- **Live data ingestion** — queries the archive's TAP (Table Access Protocol) service and caches the
-  result for 24 hours, with a manual refresh button. The first load streams the response and shows a
-  progress bar with the real number of kilobytes received.
-- **Global filters** — discovery year, method, distance, habitable-zone class and a minimum Earth
-  Similarity Index, all applied to every chart and table at once, with one-click reset.
-- **Shareable slices** — active filters are encoded in the URL, so a focused view can be bookmarked
-  or sent to someone else.
-- **Discovery trends** — per-year, cumulative, or share-of-year views broken down by discovery method.
-- **Size vs. orbit** — a log–log scatter of every world, with Mercury, Earth, Neptune and Jupiter
-  overlaid for scale.
-- **Unsupervised classification** — K-Means over log mass–radius space, with 2–6 groups. Clusters are
-  renumbered by median mass and named from their own statistics, so the labels stay correct as the
-  archive grows.
-- **3D explorer** — period, radius and equilibrium temperature in one rotatable view, coloured by
-  discovery method or temperature.
-- **Habitable worlds** — shortlist candidates either by the computed habitable zone or by a plain
-  equilibrium-temperature band, with an Earth-Similarity leaderboard and CSV export.
-- **Planet profile** — pick any world for its measurements, a size comparison against Earth, the
-  other planets in its system, and a diagram placing its orbit against its own star's habitable zone.
-- **Head-to-head comparison** — set *Compare with* on the profile tab to put a second world beside
-  the first, with Earth as a reference column across radius, mass, orbit, temperature, insolation,
-  ESI and habitable-zone class.
-- **Mission brief** — a live summary turns the current filtered slice into a starting point, calling
-  out its size and the closest Earth match before you dive into the charts.
-- **Reliable exports** — download the exact filtered slice from the main view or the specialized
-  habitable-worlds table.
+## Features
 
-Charts share a single colour scheme, so a given discovery method is the same colour everywhere. The
-tab bar sticks to the top while scrolling, and the chosen planet survives filter changes that do not
-remove it.
-
-## 📱 Responsive layout
-
-The dashboard supports desktop and mobile screens, with compact metrics and navigation on phones.
-
-<details>
-<summary>Layout details and implementation notes</summary>
-
-The layout is driven entirely by CSS media queries rather than user-agent sniffing, so it adapts live
-as a window is resized and treats a narrow desktop window the same as a phone.
-
-| Width | Headline metrics | Navigation | Sidebar | Tooltips |
-| --- | --- | --- | --- | --- |
-| ≤ 640px | 2 per row, compact | 3 × 2 grid of pills | collapsed | hidden |
-| 641–950px | 3 + 2 | one row | collapsed by Streamlit | shown |
-| > 950px | 5 across | one row, sticky | open | shown |
-
-On a 375px screen this cut the distance from the top of the page to the navigation from roughly
-1070px to 674px, and the planet profile's eight measurements from about 990px of scrolling to 370px.
-The sidebar starts collapsed so the explorer is the first thing users see on every device; filters
-remain available from Streamlit's sidebar toggle.
-
-The mission brief reports the local time of the current data load. The NASA request retries transient
-network and server errors with exponential backoff, and a schema check fails clearly if the archive
-changes the selected response columns.
-
-Charts also use a mobile canvas cap (390px for standard plots, 410px for 3D) so a phone reaches the
-next section sooner instead of inheriting desktop-height figures. Tables remain horizontally scrollable
-inside their own frame, and sidebar controls keep 44px touch targets.
-
-**Navigation.** Six tabs ran to 704px inside a 343px strip, so the last two — one of them the planet
-profile — sat off-screen with nothing to signal they existed. On phones the tab strip becomes a
-3 × 2 grid of equal 44px chips, and the labels are shortened (*Trends*, *Classes*, *3D view*,
-*Habitable*, *Profile*) so each fits.
-
-The chips are filled rather than outlined, and deliberately so: with a border on each chip, row one's
-bottom edges sat 6px above row two's top edges, drawing a pair of parallel lines straight across the
-nav that read as a double border. Fill alone separates them, with the active chip in solid accent
-(6.9:1 contrast in dark, 5.7:1 in light). Streamlit also paints its own underline rail as a 2px
-`::after` on the tab list, which no border property can remove — that is hidden on mobile too, and the
-list's `overflow-x: auto` is reset to `visible` so the second row is not clipped.
-
-Because the responsive rules have to beat the dark-mode overrides, the whole `@media` section is
-emitted *after* them in the stylesheet; otherwise the dark rules repaint the chips and the inactive
-labels drop to 1.5:1 against the page.
-
-**Theme toggle.** Left to itself Streamlit stacked the header columns and the switch took a full
-348px band between the heading and the standfirst; it now shares the title's row, right-aligned.
-
-**Tooltips.** The `help` "?" icons are hover-only affordances, so they are hidden below 640px rather
-than sitting there un-hoverable. Plotly's own hover panels stay, since tapping a point is the only
-way to identify it.
-
-**Chart legends** sit horizontally *above* the plot rather than in a right-hand column, which at
-348px was taking roughly a third of the chart's width. Above rather than below because underneath,
-Plotly's automargin packs the key hard against the x-axis title with a fixed ~4px gap that no margin
-or standoff setting will widen; above it, automargin reserves the room and the clearance lands at
-15–22px. A proportional `entrywidth` lays the keys out in even columns instead of letting them flow
-ragged — 11 methods previously wrapped into seven rows of one to three items. Long method names carry
-a legend-only alias (*Transit Timing*, *Orbital Brightness*) so entries cannot overrun their column;
-filters, tables and hover text keep the archive's full wording. The 3D view needs its own handling:
-a gl3d scene ignores automargin, so its legend is pinned to the container edge and the scene's domain
-is shortened to make room.
-
-**Alignment.** Streamlit stacks columns on mobile by forcing `min-width:100%`, and its metric cards
-size to their content — so a card carrying a delta came out 107px beside an 80px neighbour. Metric
-columns are pinned to half-width and stretched to their row, giving an even grid at every width. The
-theme toggle needed a separate fix: `vertical_alignment="center"` centres the *column boxes*, but
-Streamlit collapses the title's column to a few pixels and its toggle label pins the switch with
-`align-items:flex-start`, which together left the switch 26px above the title's letters on desktop.
-Centring the column content and the toggle label brings both to within 3px.
-
-</details>
+- **Catalogue:** curated collections, pagination, a pinned planet-name column in table mode,
+  configurable columns, and a side-by-side preview on wide screens.
+- **Profiles:** measurement coverage, uncertainty ranges and sources when NASA supplies them,
+  a host system diagram and planets with similar published measurements.
+- **Comparison:** compare up to four selected planets with Earth, switch to one planet at a time,
+  and export a summary image with NASA attribution.
+- **Discovery:** mission and facility timelines, first archive release dates, an accessible
+  data table alongside charts, and a sky map of reported coordinates.
+- **Units:** select light-years or parsecs and Earth or Jupiter units for catalogue and profile values.
+  Research charts keep their labeled source units.
+- **Data availability:** the dashboard shows the latest successful fetch time. If a refresh
+  fails, a last-known-good local snapshot remains browsable and is clearly marked.
 
 ## 🔬 The derived science
 
@@ -150,27 +66,20 @@ Both are approximations: equilibrium temperature ignores atmosphere, albedo and 
 and the habitable-zone limits assume an Earth-like atmosphere around a single star. Treat the output
 as a shortlist for follow-up, not a list of habitable planets.
 
-## ⏳ How the loading indicator works
+## Data loading and offline use
 
-The archive answers with `Transfer-Encoding: chunked` and no `Content-Length`, and it spends several
-seconds running the query before the first byte arrives — so there is no true percentage available.
-The bar is paced against a typical payload size while the caption reports the real byte count, and
-the opening stage covers the server-side wait so it never looks frozen.
+The initial request reports connection, received bytes and data preparation. NASA does not
+provide a total download size. Successful data is cached in memory for up to 24 hours and
+stored as a compressed, validated snapshot at `.cache/archive.json.gz`. Set
+`EXOPLANET_ARCHIVE_CACHE` to use another local path. The snapshot contains public
+NASA data and is excluded from Git.
 
-`HAB_VERSION` is passed to the cached loader **positionally**, not left as a default: Streamlit builds
-its cache key only from the arguments actually supplied, so a default value never reaches the key and
-the versioning silently does nothing.
-
-The fetch runs on a worker thread and the script thread paints the bar. That split is required, not
-stylistic: Streamlit replays whatever elements a `@st.cache_data` function draws, so a progress
-callback that painted into a container from an earlier run raises `CacheReplayClosureError` on the
-second rerun. The cached function therefore writes only plain numbers into a shared dict. On a cache
-hit the worker finishes before the first poll, so no loading UI is created and the page does not
-flicker on ordinary reruns.
+Only the selected page renders. Large 3D and 2D views sample up to 2,500 eligible planets.
+The catalogue initially shows 12 cards, and chart data tables load when expanded.
 
 ## 🛠️ Installation & usage
 
-1. **Clone the repository and install dependencies** (Python 3.9+; Python 3.12 validated):
+1. **Clone the repository and install dependencies** (Python 3.12):
 
    ```bash
    git clone https://github.com/akshh04/ExoplanetExplorer.git
@@ -193,6 +102,27 @@ default.
 
 An internet connection to `exoplanetarchive.ipac.caltech.edu` is required. The first load may take
 longer while NASA runs the query. If data loading fails, check connectivity and use **Try again**.
+
+## Local regression checks
+
+After installing dependencies, run:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+The tests use synthetic NASA data for repeatable checks, including fallback after a failed
+refresh. To run the responsive browser tests locally:
+
+```bash
+python -m pip install playwright==1.65.2
+python -m playwright install chromium
+python tests/browser_dashboard.py
+```
+
+GitHub Actions runs both suites on pull requests and pushes to `main`.
+
+See [the UI roadmap](docs/UI_ROADMAP.md) for delivered changes and further mobile/laptop ideas.
 
 ## Hosting and manual visits
 

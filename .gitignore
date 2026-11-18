@@ -26,3 +26,6 @@ Thumbs.db
 
 # Local tooling
 .claude/
+
+# Last successful NASA data snapshot
+.cache/
