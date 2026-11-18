@@ -32,15 +32,13 @@ def visit(page, timeout=300):
     last_wake = last_retry = 0.0
     while time.monotonic() < deadline:
         # Community Cloud can wrap the app in an iframe. Locators on page alone
-        # never reach its metrics or a wake-up control inside a child frame.
+        # never reach the catalogue or a wake-up control inside a child frame.
         for frame in page.frames:
             try:
-                metric = frame.get_by_test_id("stMetric").filter(
-                    has=frame.get_by_text("Planets shown", exact=True)
-                )
-                if metric.count() and metric.first.is_visible():
-                    value = metric.first.get_by_test_id("stMetricValue").inner_text(timeout=3000)
-                    if int(value.replace(",", "").strip()) > 0:
+                count = frame.get_by_test_id("catalogue-count")
+                if count.count() and count.first.is_visible():
+                    value = count.first.inner_text(timeout=3000).split()[0]
+                    if int(value.replace(",", "")) > 0:
                         print(f"Dashboard ready: {value} planets loaded.", flush=True)
                         return value
                 wake = frame.get_by_role(

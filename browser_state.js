@@ -46,7 +46,7 @@ export default function ({ data, setStateValue, setTriggerValue }) {
             event.target.closest("input, textarea, select, [contenteditable=true], [role=dialog]")) return;
         if (document.querySelector("[role=dialog]")) return;
         if (event.key === "/") {
-            const search = document.querySelector('input[aria-label="Find a planet"]');
+            const search = document.querySelector('.st-key-home-toolbar input, input[aria-label="Find a planet"]');
             if (search) {
                 event.preventDefault();
                 search.focus();

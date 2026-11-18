@@ -1,5 +1,4 @@
-# Default theme. Users can switch light/dark at runtime from the app's
-# top-right menu → Settings; the app reads st.context.theme and adapts.
+# Default Streamlit theme. The app offers dark mode under Display preferences.
 [theme]
 base = "light"
 primaryColor = "#7c3aed"

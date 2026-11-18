@@ -2,8 +2,8 @@
 
 | Area | What the dashboard offers |
 | --- | --- |
-| Mobile | Filter drawer with Apply and Reset, paged cards, touch targets, chart navigation, and one-planet comparisons with Earth |
-| Laptop | Sidebar filters, a catalogue preview pane, configurable columns, keyboard shortcuts, and a comparison tray |
+| Mobile | One catalogue search, a filter drawer, paged cards, touch targets, and one-planet comparisons with Earth |
+| Laptop | A two-column catalogue grid, optional sidebar filters, configurable table columns, keyboard shortcuts, and a comparison tray |
 | Exploration | Curated collections, discovery prompts, a 2D alternative to the 3D explorer, a sky map, and facility timelines |
 | Profiles | Measurement coverage, uncertainty and source links, similar planets, a system schematic, and image exports |
 | Personalization | Browser-local saved collections, named filter sets, theme and unit preferences |

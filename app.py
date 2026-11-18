@@ -33,8 +33,7 @@ st.set_page_config(
     page_title="Exoplanet Explorer",
     layout="wide",
     page_icon="🪐",
-    # Streamlit opens the filter rail on wide screens and collapses it on phones.
-    initial_sidebar_state="auto",
+    initial_sidebar_state="collapsed",
     menu_items={
         "About": (
             "Interactive exploration of the NASA Exoplanet Archive "
@@ -93,33 +92,25 @@ if IS_DARK:
     PAGE_BG, SIDEBAR_BG, CARD_BG = "#0e1117", "#161b22", "#1c2129"
     TEXT_COLOR, MUTED_TEXT, BORDER = "#e6edf3", "#9aa4b2", "rgba(230,237,243,0.16)"
     INPUT_BG = "#20262f"
-    GRADIENT = "linear-gradient(95deg, #38bdf8 0%, #a78bfa 55%, #f472b6 100%)"
-    GRADIENT_FALLBACK = "#a78bfa"
     CHART_FONT, CHART_GRID = "#e6edf3", "rgba(230,237,243,0.15)"
     ACCENT_SOFT, SHADOW = "rgba(167,139,250,0.55)", "rgba(0,0,0,0.45)"
     HOVER_TINT, FOCUS_RING = "rgba(230,237,243,0.07)", "#a78bfa"
     LINK_COLOR = "#7dd3fc"
-    CHIP_BG = "rgba(230,237,243,0.07)"
-    CHIP_ACTIVE_BG, CHIP_ACTIVE_FG = "#a78bfa", "#0e1117"
 else:
-    PAGE_BG, SIDEBAR_BG, CARD_BG = "#f8f9fd", "#f0f2fa", "#ffffff"
+    PAGE_BG, SIDEBAR_BG, CARD_BG = "#ffffff", "#f7f8fb", "#ffffff"
     TEXT_COLOR, MUTED_TEXT, BORDER = "#31333f", "#5c6470", "rgba(49,51,63,0.16)"
     INPUT_BG = "#ffffff"
-    GRADIENT = "linear-gradient(95deg, #0284c7 0%, #7c3aed 55%, #db2777 100%)"
-    GRADIENT_FALLBACK = "#7c3aed"
     CHART_FONT, CHART_GRID = "#31333f", "rgba(49,51,63,0.12)"
     ACCENT_SOFT, SHADOW = "rgba(124,58,237,0.45)", "rgba(15,23,42,0.10)"
     HOVER_TINT, FOCUS_RING = "rgba(49,51,63,0.05)", "#7c3aed"
     LINK_COLOR = "#0284c7"
-    CHIP_BG = "rgba(49,51,63,0.06)"
-    CHIP_ACTIVE_BG, CHIP_ACTIVE_FG = "#7c3aed", "#ffffff"
 
 _dark_overrides = f"""
     html, body, .stApp, [data-testid="stHeader"], [data-testid="stAppViewContainer"] {{
         background-color: {PAGE_BG} !important;
         color: {TEXT_COLOR} !important;
     }}
-    [data-testid="stSidebar"] {{
+    [data-testid="stSidebar"], [data-testid="stPopoverBody"], [role="dialog"] {{
         background-color: {SIDEBAR_BG} !important;
         color: {TEXT_COLOR} !important;
     }}
@@ -172,10 +163,31 @@ st.markdown(
     .st-key-browser-state, .st-key-browser-route {{ display: none; }}
     .st-key-catalogue-preview {{ scroll-margin-top: 10rem; }}
     .st-key-catalogue-preview h4 {{ padding-top: 0; }}
-    [class*="st-key-card-actions-"] [data-testid="stHorizontalBlock"] {{ flex-wrap: nowrap; gap: 0.5rem; }}
-    [class*="st-key-card-actions-"] [data-testid="stColumn"] {{ min-width: 0 !important; flex: 1 1 0 !important; }}
-    [class*="st-key-card-actions-"] button {{ overflow-wrap: anywhere; }}
     .st-key-results-controls p {{ margin-bottom: 0; }}
+    [data-testid="stMainBlockContainer"]:has(.st-key-home-toolbar) {{ max-width: 1120px; padding-top: 2.75rem; }}
+    .st-key-home-toolbar [data-baseweb="input"] {{ min-height: 44px; }}
+    .st-key-home-toolbar [data-testid="stPopover"] button {{ min-height: 44px; }}
+    .st-key-catalogue-results [data-testid="stVerticalBlockBorderWrapper"] {{ border-color: {BORDER}; }}
+    .st-key-catalogue-results [data-testid="stButton"] button[kind="tertiary"] {{
+        justify-content: flex-start; padding: 0.25rem 0; text-align: left;
+        font-size: 1.05rem; font-weight: 650;
+        color: {TEXT_COLOR} !important; border: 0 !important; background: transparent !important;
+    }}
+    .st-key-catalogue-results [data-testid="stButton"] button[kind="tertiary"]:hover {{
+        color: {FOCUS_RING} !important;
+    }}
+    .st-key-catalogue-results button[kind="tertiary"] > div,
+    .st-key-catalogue-results button[kind="tertiary"] [data-has-shortcut] {{ width: 100%; }}
+    .st-key-catalogue-results button[kind="tertiary"] [data-has-shortcut] {{
+        display: flex; justify-content: space-between;
+    }}
+    .st-key-catalogue-results button[kind="tertiary"] span:has(> [data-testid="stIconMaterial"]) {{
+        order: 1; color: {MUTED_TEXT};
+    }}
+    .st-key-catalogue-results button[kind="tertiary"] p {{
+        font-size: 1.05rem; font-weight: 650; overflow-wrap: anywhere;
+    }}
+    .catalogue-meta {{ color: {MUTED_TEXT} !important; font-size: 0.875rem; margin: 0; overflow-wrap: anywhere; }}
     [data-testid="stPlotlyChart"] {{ padding-top: 1.75rem; }}
     [data-testid="stPlotlyChart"] .modebar {{ top: -1.5rem !important; }}
     .stApp, [data-testid="stAppViewContainer"] {{ background: {PAGE_BG}; }}
@@ -193,39 +205,31 @@ st.markdown(
     .st-key-explorer-navigation [role="radiogroup"] label {{
         display: flex; align-items: center; justify-content: center;
         min-height: 44px; margin: 0; padding: 0.45rem 0.25rem;
-        border-radius: 10px; background: {CHIP_BG};
-        cursor: pointer; border: 1px solid transparent;
+        color: {MUTED_TEXT}; border-radius: 0;
+        cursor: pointer; border: 0; border-bottom: 2px solid transparent;
     }}
+    .st-key-explorer-navigation .st-key-nav_group [role="radiogroup"] {{ max-width: 30rem; }}
     .st-key-explorer-navigation .st-key-chart_view [role="radiogroup"] {{
         grid-template-columns: repeat(6, minmax(0, 1fr));
     }}
     .st-key-explorer-navigation [role="radiogroup"] label {{ width: 100%; }}
     .st-key-explorer-navigation [role="radiogroup"] label > div > div:first-child {{ display: none; }}
     .st-key-explorer-navigation [role="radiogroup"] label:has(input:checked) {{
-        background: {CHIP_ACTIVE_BG};
+        border-bottom-color: {FOCUS_RING}; font-weight: 650;
     }}
-    .st-key-explorer-navigation label:has(input:checked) p {{ color: {CHIP_ACTIVE_FG} !important; }}
+    .st-key-explorer-navigation label:has(input:checked) p {{ color: {FOCUS_RING} !important; }}
     .st-key-explorer-navigation label:has(input:focus-visible) {{ outline: 2px solid {FOCUS_RING}; outline-offset: 2px; }}
-    .st-key-discovery-shortcuts [data-testid="stButton"] button {{
-        min-height: 64px; border: 1px solid {BORDER};
-        border-radius: 14px; font-weight: 650; background: {CARD_BG};
-    }}
     [data-testid="stButton"] button, [data-testid="stLinkButton"] a {{ min-height: 44px; border-radius: 10px; }}
     @media (max-width: 950px) {{
         .st-key-explorer-navigation .st-key-chart_view [role="radiogroup"] {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}
     }}
     @media (max-width: 640px) {{
+        [data-testid="stMainBlockContainer"]:has(.st-key-home-toolbar) {{ padding-top: 2.25rem; }}
         .st-key-explorer-navigation {{ top: 2.7rem; padding: 0.45rem 0; }}
         .st-key-explorer-navigation label p {{ font-size: 0.76rem; }}
-        .st-key-discovery-shortcuts [data-testid="stHorizontalBlock"] {{ flex-wrap: wrap; gap: 0.35rem; }}
-        .st-key-discovery-shortcuts [data-testid="stColumn"] {{ min-width: 100% !important; }}
-        .st-key-discovery-shortcuts [data-testid="stButton"] button {{ min-height: 44px; }}
-        .st-key-discovery-shortcuts [data-testid="stCaptionContainer"] {{ margin-bottom: 0.5rem; }}
-        .hero-sub {{ line-height: 1.4; }}
-        .st-key-results-controls [data-testid="stHorizontalBlock"] {{ flex-wrap: nowrap; }}
-        .st-key-results-controls [data-testid="stColumn"] {{ min-width: 0 !important; }}
-        .st-key-results-controls [data-testid="stColumn"]:first-child {{ flex: 0 0 45% !important; }}
-        .st-key-results-controls [data-testid="stColumn"]:last-child {{ flex: 1 1 0 !important; }}
+        .st-key-home-toolbar [data-testid="stHorizontalBlock"] {{ flex-wrap: wrap; gap: 0.5rem; }}
+        .st-key-home-toolbar [data-testid="stColumn"] {{ min-width: 0 !important; flex: 1 1 0 !important; }}
+        .st-key-home-toolbar [data-testid="stColumn"]:first-child {{ flex-basis: 100% !important; }}
         [role="dialog"] {{ max-width: 100vw !important; }}
     }}
     /* Metric cards. NOTE: the test id is `stMetric`, not `metric-container`. */
@@ -276,60 +280,19 @@ st.markdown(
     }}
 
     h1.hero-title {{
-        font-size: 3rem !important;
-        font-weight: 800;
+        color: {TEXT_COLOR};
+        font-size: clamp(1.75rem, 4vw, 2.75rem) !important;
+        font-weight: 750;
         line-height: 1.15;
+        letter-spacing: -0.045em;
         margin: 0;
-        padding-bottom: 0.2rem;
-        background: {GRADIENT};
-        -webkit-background-clip: text;
-        background-clip: text;
-        -webkit-text-fill-color: transparent;
-        color: transparent;
-    }}
-    /* Without background-clip:text the rules above would render the title
-       invisible, so fall back to a solid colour. */
-    @supports not ((-webkit-background-clip: text) or (background-clip: text)) {{
-        h1.hero-title {{
-            background: none;
-            color: {GRADIENT_FALLBACK};
-            -webkit-text-fill-color: {GRADIENT_FALLBACK};
-        }}
+        padding: 0;
     }}
     .hero-sub {{
-        font-size: 1.05rem;
-        opacity: 0.8;
-        margin-top: -0.2rem;
-    }}
-    /* Top-right theme toggle, level with the title. `vertical_alignment`
-       centres the column boxes, but Streamlit collapses the title's column
-       to a few pixels, so the glyphs ended up 26px below the switch on
-       desktop. Centring the column *content* is what actually lines them up. */
-    [data-testid="stHorizontalBlock"] div[data-testid="stToggle"] {{
-        display: flex;
-        justify-content: flex-end;
-    }}
-    .st-key-header-row [data-testid="stHorizontalBlock"] {{
-        align-items: center;
-    }}
-    .st-key-header-row [data-testid="stColumn"],
-    .st-key-header-row [data-testid="stColumn"] > div,
-    .st-key-header-row [data-testid="stColumn"] [data-testid="stElementContainer"] {{
-        display: flex;
-        align-items: center;
-    }}
-    .st-key-header-row [data-testid="stColumn"] [data-testid="stMarkdownContainer"] {{
-        width: 100%;
-    }}
-    .st-key-header-row h1.hero-title {{
-        padding-top: 0;
-        padding-bottom: 0;
-    }}
-    /* Streamlit's toggle label pins its switch to the top with
-       align-items:flex-start, leaving the switch ~10px above the centre of
-       its own 42px box and out of line with the title. */
-    .st-key-header-row [data-testid="stCheckbox"] label {{
-        align-items: center;
+        color: {MUTED_TEXT};
+        font-size: 0.95rem;
+        line-height: 1.45;
+        margin: 0.5rem 0 0;
     }}
 
     /* Sidebar heading, styled rather than using st.header so it can sit
@@ -453,20 +416,6 @@ st.markdown(
             padding-bottom: 3rem;
         }}
 
-        /* Sized to keep "Exoplanet Explorer" on one line in the ~250px left
-           beside the toggle: at 1.95rem it wrapped to two lines, and even
-           1.45rem ran 5px into the switch. */
-        /* The title measures 232px against 246px of column yet still broke
-           to two lines, dropping its centre below the toggle -- nowrap pins
-           it to one. Streamlit's h1 top padding goes for the same reason. */
-        h1.hero-title {{
-            font-size: 1.3rem !important;
-            line-height: 1.2;
-            padding-top: 0;
-            padding-bottom: 0;
-            white-space: nowrap;
-        }}
-        .hero-sub {{ font-size: 0.92rem; }}
         /* Streamlit stacks columns on mobile by forcing min-width:100%, which
            turned 5 headline cards into 5 full-width slabs (and 8 profile ones
            into 8). Two compact cards per row instead; the flex row already
@@ -506,32 +455,6 @@ st.markdown(
         [data-testid="stMetric"] > div > div:has([data-testid="stMetricDelta"]) {{
             grid-row: 3;
             grid-column: 1;
-        }}
-
-        /* Keep the theme toggle on the title's row. Left to itself Streamlit
-           stacks the two columns and the switch eats a full 348px band
-           between the heading and the standfirst. */
-        .st-key-header-row [data-testid="stHorizontalBlock"] {{
-            flex-wrap: nowrap !important;
-            gap: 0.4rem;
-            min-height: 44px;
-        }}
-        .st-key-header-row [data-testid="stColumn"] {{
-            min-width: 0 !important;
-            width: auto !important;
-        }}
-        .st-key-header-row [data-testid="stColumn"]:first-child {{
-            flex: 1 1 auto !important;
-        }}
-        .st-key-header-row [data-testid="stColumn"]:last-child {{
-            flex: 0 0 auto !important;
-        }}
-        .st-key-header-row [data-testid="stToggle"] {{
-            padding-top: 0;
-        }}
-        .st-key-header-row [data-testid="stToggle"] label {{
-            font-size: 0.74rem;
-            white-space: nowrap;
         }}
 
         /* Sub-headings and section spacing scale down with everything else. */
@@ -580,13 +503,6 @@ st.markdown(
         [data-testid="stSidebar"] input {{
             min-height: 44px;
         }}
-    }}
-
-    /* Only the very narrowest phones need another step down; from ~360px up
-       the title clears the toggle at 1.3rem with room to spare. */
-    @media (max-width: 340px) {{
-        h1.hero-title {{ font-size: 1rem !important; }}
-        .st-key-header-row [data-testid="stToggle"] label {{ font-size: 0.68rem; }}
     }}
 
     /* Comfortable tap targets on any touch device. */
@@ -1041,17 +957,11 @@ CHART_H_3D = 520
 
 
 # --- HEADER --------------------------------------------------------------
-header_row = st.container(key="header-row")
-header_col, toggle_col = header_row.columns([6, 1], vertical_alignment="center")
-with toggle_col:
-    st.toggle("🌙 Dark", key="dark_mode", help="Switch between light and dark mode")
-with header_col:
-    st.markdown('<h1 class="hero-title">🪐 Exoplanet Explorer</h1>', unsafe_allow_html=True)
-st.markdown(
-    f'<p class="hero-sub">Discover confirmed worlds beyond our solar system, '
-    f'straight from the <a href="{ARCHIVE_HOME}">NASA Exoplanet Archive</a>.</p>',
-    unsafe_allow_html=True,
+st.html(
+    '<header><h1 class="hero-title">Exoplanet Explorer</h1>'
+    f'<p class="hero-sub">Confirmed planets from the <a href="{ARCHIVE_HOME}">NASA Exoplanet Archive</a>.</p></header>'
 )
+
 
 def load_with_progress():
     """Fetch on a worker thread while the script updates the loading status.
@@ -1370,12 +1280,18 @@ def apply_preset(preset):
     st.session_state["active_view"] = "Explore"
 
 
-st.selectbox(
-    "Find a planet", options=sorted(planet_names), index=None,
-    placeholder="Search all planets",
-    key="global_search", on_change=search_planet,
-    help="Search the entire catalogue. Opening a planet resets filters. Keyboard shortcut: /.",
-)
+def render_global_search():
+    st.selectbox(
+        "Find a planet", options=sorted(planet_names), index=None,
+        placeholder="Search all planets",
+        key="global_search", on_change=search_planet,
+        help="Search the entire archive. Opening a planet resets filters.",
+    )
+
+
+if st.session_state["active_view"] != "Explore":
+    render_global_search()
+
 
 # --- FILTERS AND NAVIGATION ----------------------------------------------
 def filter_fields(prefix="", values=None):
@@ -1492,6 +1408,7 @@ with st.sidebar:
         st.text_input("Filter set name", key="filter_name", max_chars=40)
         st.button("Save filter set", on_click=save_filter_set)
     with st.expander("Display preferences"):
+        st.toggle("Dark mode", key="dark_mode")
         st.radio("Distance", list(DISTANCE_SCALE), key="distance_unit", horizontal=True)
         st.radio("Planet size and mass", list(SIZE_SCALE), key="size_unit", horizontal=True)
     st.button("Refresh data from NASA", width="stretch", on_click=refresh_archive)
@@ -1572,16 +1489,47 @@ if esi_floor > 0:
 if live_filters["complete_only"]:
     active_filters.append("Complete measurements")
 
-with st.container(key="results-controls"):
-    filter_col, count_col = st.columns([1, 3], vertical_alignment="center")
-    with filter_col:
-        label = f"Filters · {len(active_filters)} active" if active_filters else "Filters"
-        st.button(label, icon=":material/tune:", key="open_filters", on_click=show_filters,
-                  help="Keyboard shortcut: F", width="stretch")
-    with count_col:
-        st.markdown(f"**{len(fdf):,}** of {len(df):,} planets · {fdf[HOST].nunique():,} systems")
-        if active_filters:
-            st.caption(" · ".join(active_filters))
+def change_page(page_key, page):
+    st.session_state[page_key] = page
+    st.session_state.pop("preview_planet", None)
+
+
+def catalogue_search(is_saved):
+    search_key = "saved_search" if is_saved else "catalogue_search"
+    page_key = "saved_page" if is_saved else "catalogue_page"
+    return st.text_input(
+        "Search saved planets" if is_saved else "Search catalogue",
+        placeholder="Search by planet or host star", key=search_key, max_chars=120,
+        label_visibility="collapsed", on_change=change_page, args=(page_key, 0),
+    ).strip()
+
+
+def filter_button():
+    label = f"Filters ({len(active_filters)})" if active_filters else "Filters"
+    st.button(label, icon=":material/tune:", key="open_filters", on_click=show_filters,
+              help="Keyboard shortcut: F", width="stretch")
+
+
+if view == "Explore":
+    st.subheader("Planet catalogue")
+    with st.container(key="home-toolbar"):
+        search_col, filter_col, options_col = st.columns([6, 1.35, 1.25], vertical_alignment="bottom")
+        with search_col:
+            home_query = catalogue_search(is_saved=False)
+        with filter_col:
+            filter_button()
+        home_options = options_col.popover("Options", width="stretch")
+    if active_filters:
+        st.caption(" · ".join(active_filters))
+else:
+    with st.container(key="results-controls"):
+        filter_col, count_col = st.columns([1, 3], vertical_alignment="center")
+        with filter_col:
+            filter_button()
+        with count_col:
+            st.markdown(f"**{len(fdf):,}** of {len(df):,} planets · {fdf[HOST].nunique():,} systems")
+            if active_filters:
+                st.caption(" · ".join(active_filters))
 
 if st.session_state.get("filter_dialog_open"):
     filters_drawer()
@@ -1597,11 +1545,11 @@ _sync_filters_to_query()
 if fdf.empty and view not in {"Saved", "Learn"}:
     st.warning("**No planets match the current filters.**")
     st.button("Relax filters", type="primary", on_click=reset_filters)
-    st.info("Try a wider distance range, more discovery methods, or fewer measurement requirements.")
-    st.stop()
+    if view != "Explore":
+        st.stop()
 
 # --- HEADLINE METRICS ----------------------------------------------------
-if not fdf.empty and view not in {"Saved", "Learn"}:
+if not fdf.empty and view in CHART_VIEWS:
     latest_year = int(fdf[YEAR].max())
     this_year = int((fdf[YEAR] == latest_year).sum())
     prev_year = int((fdf[YEAR] == latest_year - 1).sum())
@@ -1648,7 +1596,7 @@ if not fdf.empty and view not in {"Saved", "Learn"}:
             icon=":material/trending_up:",
         )
 
-if active_filters:
+if active_filters and view != "Explore":
     st.button("Clear all filters", on_click=reset_filters, key="clear_active_filters")
 
 with st.sidebar:
@@ -1657,11 +1605,6 @@ with st.sidebar:
         "Download selection (CSV)", data=fdf.to_csv(index=False).encode("utf-8"),
         file_name="exoplanets_filtered.csv", mime="text/csv", width="stretch",
     )
-
-def change_page(page_key, page):
-    st.session_state[page_key] = page
-    st.session_state.pop("preview_planet", None)
-
 
 def preview_planet(name):
     st.session_state["preview_planet"] = name
@@ -1683,23 +1626,16 @@ def open_comparison():
 
 def show_summary_card(planet, from_saved):
     name = planet[NAME]
-    status = planet[HZ_STATUS]
     radius = measurement(planet[RADIUS] / radius_divisor, ".2f", f" R{size_suffix}")
     distance = measurement(planet[DISTANCE] * distance_factor, ",.1f", f" {distance_suffix}")
-    radius_text = f"Radius {radius}" if radius != "—" else "Radius unknown"
-    distance_text = f"{distance} away" if distance != "—" else "Distance unknown"
-    st.html(
-        f'<h4>{html.escape(name)}</h4>'
-        f'<p class="profile-sub">{html.escape(str(planet[HOST]))}</p>'
-        f'<p>{radius_text} · {distance_text}</p>'
-        f'<p><span class="profile-chip chip-{hz_slug(status)}">{zone_label(status)}</span></p>'
-    )
-    with st.container(key=f"card-actions-{name}"):
-        direct, preview = st.columns(2)
-        direct.button(f"Open {name}", on_click=open_profile, args=(name, from_saved),
-                      key=f"card_open_{name}", type="primary", width="stretch")
-        preview.button(f"Preview {name}", on_click=preview_planet, args=(name,),
-                       key=f"card_preview_{name}", width="stretch")
+    details = [str(planet[HOST])]
+    if radius != "—":
+        details.append(radius)
+    if distance != "—":
+        details.append(distance)
+    st.button(name, icon=":material/arrow_forward:", on_click=open_profile, args=(name, from_saved),
+              key=f"card_open_{name}", type="tertiary", width="stretch")
+    st.html(f'<p class="catalogue-meta">{html.escape(" · ".join(details))}</p>')
 
 
 @st.dialog("Report a problem")
@@ -1731,32 +1667,23 @@ if tray and view in {"Explore", "Saved", "Profile"}:
                           key=f"tray_remove_{name}")
             st.button("Clear comparison", on_click=lambda: st.session_state.update(comparison_tray=[]))
 
-if view == "Explore":
-    st.subheader("Explore confirmed planets")
-    with st.container(key="discovery-shortcuts"):
-        for col, preset in zip(st.columns(3), ["Habitable candidates", "Nearby worlds", "Recent discoveries"]):
-            col.button(preset, on_click=apply_preset, args=(preset,), width="stretch")
-    with st.expander("Guided discoveries"):
-        st.markdown("**Find a planet with a shorter year than Mercury.** Mercury orbits the Sun in 87.97 days.")
-        st.button("Explore short orbits", on_click=apply_preset, args=("Short years",))
-        st.markdown("**Look for neighbours.** The Nearby worlds shortcut includes confirmed planets within 50 parsecs.")
-        st.markdown("**Look for a multi-planet system.** Select that collection, open a planet, and compare the orbits around its star.")
-
 if view in {"Explore", "Saved"}:
     is_saved = view == "Saved"
     page_key = "saved_page" if is_saved else "catalogue_page"
     search_key = "saved_search" if is_saved else "catalogue_search"
     reset_page = {"on_change": change_page, "args": (page_key, 0)}
-    st.subheader("Saved planets" if is_saved else "Planet catalogue")
-    query = st.text_input("Search saved planets" if is_saved else "Search catalogue",
-                          placeholder="Planet or host star", key=search_key, max_chars=120,
-                          **reset_page).strip()
-    controls = st.columns(3)
+    if is_saved:
+        st.subheader("Saved planets")
+        query = catalogue_search(is_saved=True)
+        collection_control, sort_control, layout_control = st.columns(3)
+    else:
+        query = home_query
+        collection_control = sort_control = layout_control = home_options
     if is_saved:
         collection_options = ["All saved", *sorted(st.session_state["collections"])]
         if st.session_state.get("saved_collection") not in collection_options:
             st.session_state["saved_collection"] = "All saved"
-        selection_name = controls[0].selectbox(
+        selection_name = collection_control.selectbox(
             "Collection", collection_options, key="saved_collection", **reset_page,
         )
         saved_names = st.session_state["favorites"]
@@ -1764,7 +1691,7 @@ if view in {"Explore", "Saved"}:
             saved_names = st.session_state["collections"][selection_name]
         catalogue = df[df[NAME].isin(saved_names)]
     else:
-        collection = controls[0].selectbox(
+        collection = collection_control.selectbox(
             "Collection", ["All worlds", "Closest worlds", "Giant planets", "Unusual orbits", "Multi-planet systems"],
             key="catalogue_collection", **reset_page,
         )
@@ -1788,83 +1715,90 @@ if view in {"Explore", "Saved"}:
         host_match = catalogue[HOST].str.contains(query, case=False, regex=False, na=False)
         catalogue = catalogue[name_match | host_match]
 
-    sort_by = controls[1].selectbox("Sort planets", list(sort_options), key="catalogue_sort", **reset_page)
+    sort_by = sort_control.selectbox("Sort planets", list(sort_options), key="catalogue_sort", **reset_page)
     sort_key, ascending = sort_options[sort_by]
     catalogue = catalogue.sort_values([sort_key, NAME] if sort_key != NAME else [NAME],
                                       ascending=[ascending, True] if sort_key != NAME else ascending)
-    layout = controls[2].radio("Layout", ["Cards", "Table"], key="catalogue_layout", horizontal=True)
+    layout = layout_control.radio("Layout", ["Cards", "Table"], key="catalogue_layout", horizontal=True)
+    if not is_saved:
+        with home_options:
+            st.divider()
+            st.markdown("**Discovery shortcuts**")
+            for preset in ("Habitable candidates", "Nearby worlds", "Recent discoveries"):
+                st.button(preset, on_click=apply_preset, args=(preset,), width="stretch")
+            if active_filters:
+                st.button("Clear all filters", on_click=reset_filters, width="stretch")
+            st.divider()
+            render_global_search()
     if sort_by == "Latest publications":
-        st.caption("Discovery publication date from NASA. Catalogue release dates are listed separately in Trends.")
+        sort_control.caption("Discovery publication date from NASA. Catalogue release dates are listed separately in Trends.")
     if catalogue.empty:
         if query:
             st.info("No planets match this search in the current selection.")
             st.button("Clear search", on_click=lambda: st.session_state.update({search_key: ""}))
-        else:
+        elif is_saved or not fdf.empty:
             st.info("Save planets from their profiles to fill this collection." if is_saved
                     else "No planets match this collection and the current filters.")
     else:
-        st.caption(f"{len(catalogue):,} planets · {st.session_state['distance_unit']} · {st.session_state['size_unit']} units")
-        browse, detail = st.columns([2, 1], gap="medium")
-        with browse:
-            if layout == "Cards":
-                page_size = 12
-                last_page = (len(catalogue) - 1) // page_size
-                page = min(last_page, max(0, st.session_state.get(page_key, 0)))
-                st.session_state[page_key] = page
-                start = page * page_size
+        st.html(f'<p class="catalogue-meta" role="status" data-testid="catalogue-count">'
+                f'{len(catalogue):,} {"planet" if len(catalogue) == 1 else "planets"}</p>')
+        if layout == "Cards":
+            page_size = 8
+            last_page = (len(catalogue) - 1) // page_size
+            page = min(last_page, max(0, st.session_state.get(page_key, 0)))
+            st.session_state[page_key] = page
+            start = page * page_size
+            with st.container(key="catalogue-results"):
                 for offset in range(start, min(start + page_size, len(catalogue)), 2):
                     cards = st.columns(2)
                     for col, (_, planet_row) in zip(cards, catalogue.iloc[offset:offset + 2].iterrows()):
-                        with col.container(border=True):
+                        with col.container(border=True, gap="xxsmall"):
                             show_summary_card(planet_row, is_saved)
+            if last_page:
                 previous, position, next_page = st.columns(3, vertical_alignment="center")
                 previous.button("Previous", disabled=page == 0, on_click=change_page, args=(page_key, page - 1))
                 position.caption(f"Page {page + 1} of {last_page + 1}")
                 next_page.button("Next", disabled=page == last_page, on_click=change_page, args=(page_key, page + 1))
-            else:
-                columns = [RADIUS, MASS, DISTANCE, YEAR, ESI, HZ_STATUS]
-                with st.expander("Table columns"):
-                    visible = st.multiselect("Measurements", columns, default=columns, key="catalogue_columns")
-                    st.button("Restore default columns",
-                              on_click=lambda: st.session_state.update(catalogue_columns=columns))
-                display = catalogue[[NAME, *visible]].copy()
-                for column, scale in [(RADIUS, 1 / radius_divisor), (MASS, 1 / mass_divisor), (DISTANCE, distance_factor)]:
-                    if column in display:
-                        display[column] *= scale
-                # A row index is only valid for the specific ordered result set.
-                table_id = hashlib.sha256(pd.util.hash_pandas_object(catalogue[NAME], index=False).values.tobytes()).hexdigest()[:16]
-                selection = st.dataframe(
-                    display, hide_index=True, height=465,
-                    key=f"planet_catalogue_{table_id}", on_select="rerun", selection_mode="single-row",
-                    column_config={
-                        NAME: st.column_config.TextColumn("Planet", pinned=True),
-                        RADIUS: st.column_config.NumberColumn(f"Radius (R{size_suffix})", format="%.2f"),
-                        MASS: st.column_config.NumberColumn(f"Mass (M{size_suffix})", format="%.2f"),
-                        DISTANCE: st.column_config.NumberColumn(f"Distance ({distance_suffix})", format="%.1f"),
-                        ESI: st.column_config.NumberColumn("Earth similarity", format="%.3f"),
-                    },
-                )
-                if selection.selection.rows:
-                    preview_planet(catalogue.iloc[selection.selection.rows[0]][NAME])
-        with detail:
+        else:
+            columns = [RADIUS, MASS, DISTANCE, YEAR, ESI, HZ_STATUS]
+            with (st.expander("Table columns") if is_saved else home_options):
+                visible = st.multiselect("Measurements", columns, default=columns, key="catalogue_columns")
+                st.button("Restore default columns",
+                          on_click=lambda: st.session_state.update(catalogue_columns=columns))
+            display = catalogue[[NAME, *visible]].copy()
+            for column, scale in [(RADIUS, 1 / radius_divisor), (MASS, 1 / mass_divisor), (DISTANCE, distance_factor)]:
+                if column in display:
+                    display[column] *= scale
+            # A row index is only valid for the specific ordered result set.
+            table_id = hashlib.sha256(pd.util.hash_pandas_object(catalogue[NAME], index=False).values.tobytes()).hexdigest()[:16]
+            selection = st.dataframe(
+                display, hide_index=True, height=465,
+                key=f"planet_catalogue_{table_id}", on_select="rerun", selection_mode="single-row",
+                column_config={
+                    NAME: st.column_config.TextColumn("Planet", pinned=True),
+                    RADIUS: st.column_config.NumberColumn(f"Radius (R{size_suffix})", format="%.2f"),
+                    MASS: st.column_config.NumberColumn(f"Mass (M{size_suffix})", format="%.2f"),
+                    DISTANCE: st.column_config.NumberColumn(f"Distance ({distance_suffix})", format="%.1f"),
+                    ESI: st.column_config.NumberColumn("Earth similarity", format="%.3f"),
+                },
+            )
+            if selection.selection.rows:
+                preview_planet(catalogue.iloc[selection.selection.rows[0]][NAME])
             selected_name = st.session_state.get("preview_planet")
             matched = catalogue[catalogue[NAME] == selected_name]
-            with st.container(border=True, key="catalogue-preview"):
-                st.markdown("#### Planet preview")
-                if matched.empty:
-                    st.caption("Select a card or table row to see its details.")
-                else:
-                    row = matched.iloc[0]
-                    st.markdown(f"**{row[NAME]}**")
-                    st.caption(f"{row[HOST]} · {int(row[YEAR])} · {row[METHOD]}")
-                    st.write(zone_label(row[HZ_STATUS]))
-                    st.metric("Earth similarity", measurement(row[ESI], ".3f"))
+            if not matched.empty:
+                row = matched.iloc[0]
+                with st.container(border=True, key="catalogue-preview"):
+                    st.markdown(f"#### {row[NAME]}")
+                    st.caption(f"{row[HOST]} · {int(row[YEAR])} · {row[METHOD]} · {zone_label(row[HZ_STATUS])}")
                     st.button("Open full profile", type="primary", on_click=open_profile,
-                              args=(row[NAME], is_saved), width="stretch")
-                    selected = row[NAME] in st.session_state.get("comparison_tray", [])
+                              args=(row[NAME], is_saved))
+                    selected = row[NAME] in tray
                     st.button("Remove from comparison" if selected else "Add to comparison",
-                              on_click=enqueue_comparison, args=(row[NAME],), width="stretch",
+                              on_click=enqueue_comparison, args=(row[NAME],),
                               disabled=not selected and len(tray) >= COMPARISON_LIMIT)
+            else:
+                st.caption("Select a row to open its profile.")
     if is_saved and st.session_state["favorites"]:
         with st.expander("Manage collections"):
             with st.form("planet_collection"):
@@ -2861,6 +2795,10 @@ if st.session_state["active_view"] == "Profile":
 
 if st.session_state["active_view"] == "Learn":
     st.subheader("A field guide to other worlds")
+    with st.expander("Guided discoveries"):
+        st.markdown("Find a planet with an orbit shorter than Mercury’s 87.97-day year.")
+        st.button("Explore short orbits", on_click=apply_preset, args=("Short years",))
+
     st.markdown("You don’t need an astronomy degree to explore. Start with these essentials.")
     for title, explanation in [
         ("How do we find planets?", "**Transits** are tiny dips in starlight when a planet crosses its star. "

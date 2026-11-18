@@ -39,6 +39,10 @@ class DashboardTests(unittest.TestCase):
         next(b for b in self.app.button if b.label == label).click()
         self.run_app()
 
+    def planet_count(self):
+        return next(item.proto.body.split(">")[1].split("<")[0]
+                    for item in self.app.get("html") if 'data-testid="catalogue-count"' in item.proto.body)
+
     def test_network_failure_has_retry_and_recovers(self):
         self.get.side_effect = requests.ConnectionError("Test archive unavailable")
         self.app.run(timeout=30)
@@ -47,14 +51,14 @@ class DashboardTests(unittest.TestCase):
         self.assertTrue(any(b.label == 'Try again' for b in self.app.button))
         self.get.side_effect = None
         self.click('Try again')
-        self.assertEqual(self.app.metric[0].value, '24')
+        self.assertEqual(self.planet_count(), "24 planets")
 
     def test_snapshot_after_failed_refresh(self):
         self.run_app()
         self.get.side_effect = requests.exceptions.ProxyError("Test archive unavailable")
         self.click("Refresh data from NASA")
         self.assertTrue(any("Showing a saved NASA snapshot" in item.value for item in self.app.warning))
-        self.assertEqual(self.app.metric[0].value, "24")
+        self.assertEqual(self.planet_count(), "24 planets")
         requests_made = self.get.call_count
         self.app.radio(key="nav_group").set_value("Learn")
         self.run_app()
@@ -62,18 +66,21 @@ class DashboardTests(unittest.TestCase):
 
     def test_saved_comparison_and_mapped_measurements(self):
         self.run_app()
-        choice = next(b.label for b in self.app.button if b.label.startswith("Preview Test"))
+        choice = next(b.label for b in self.app.button if b.label.startswith("Test World"))
         self.click(choice)
         self.click("Add to comparison")
         self.assertEqual(len(self.app.session_state["comparison_tray"]), 1)
         self.app.checkbox(key="complete_only").check()
         self.run_app()
         self.assertEqual(self.app.session_state["route_params"]["complete"], "1")
-        self.assertLess(int(self.app.metric[0].value), 24)
+        counts = [item.value.replace("**", "") for item in self.app.markdown
+                  if "of 24 planets" in item.value]
+        self.assertTrue(counts)
+        self.assertLess(int(counts[0].split()[0]), 24)
 
     def test_all_sections_and_lazy_charts(self):
         self.run_app()
-        self.assertEqual(self.app.metric[0].value, '24')
+        self.assertEqual(self.planet_count(), "24 planets")
         self.assertEqual(len(self.app.get('plotly_chart')), 0)
         for view in ['Trends', 'Orbits', 'Classes', '3D', 'Habitable', 'Profile', 'Learn']:
             with self.subTest(view=view):
@@ -98,7 +105,7 @@ class DashboardTests(unittest.TestCase):
         self.run_app()
         self.assertEqual(self.app.session_state['active_view'], 'Profile')
         self.assertEqual(self.app.selectbox(key='profile_pick').value, 'Test World 20 b')
-        self.assertEqual(self.app.metric[0].value, '24')
+        self.assertIn("24 of 24 planets", " ".join(item.value.replace("**", "") for item in self.app.markdown))
         self.click('Save planet')
         self.app.selectbox(key='profile_rival').select('Test World 8 b')
         self.run_app()
@@ -106,8 +113,8 @@ class DashboardTests(unittest.TestCase):
         self.run_app()
         self.app.radio(key='nav_group').set_value('Saved')
         self.run_app()
-        self.assertTrue(any(b.label == 'Preview Test World 20 b' for b in self.app.button))
-        self.assertEqual(len([b for b in self.app.button if b.label.startswith('Preview Test')]), 1)
+        self.assertTrue(any(b.label == "Test World 20 b" for b in self.app.button))
+        self.assertEqual(len([b for b in self.app.button if b.label.startswith("Test World")]), 1)
         self.app.session_state['active_view'] = 'Profile'
         self.run_app()
         self.assertEqual(self.app.selectbox(key='profile_pick').value, 'Test World 20 b')
@@ -135,7 +142,7 @@ class DashboardTests(unittest.TestCase):
         self.run_app()
         self.assertTrue(self.app.warning)
         self.click('Relax filters')
-        self.assertEqual(self.app.metric[0].value, '24')
+        self.assertEqual(self.planet_count(), "24 planets")
         self.app.selectbox(key='global_search').select('Test World 23 b')
         self.run_app()
         self.assertTrue(any('No published radius' in e.value for e in self.app.info))
@@ -146,13 +153,13 @@ class DashboardTests(unittest.TestCase):
         self.click("Next")
         self.app.text_input(key="catalogue_search").set_value("test star 2")
         self.run_app()
-        cards = {button.label for button in self.app.button if button.label.startswith("Open Test World")}
-        self.assertEqual(cards, {"Open Test World 6 b", "Open Test World 7 b", "Open Test World 8 b"})
-        self.click("Open Test World 8 b")
+        cards = {button.label for button in self.app.button if button.label.startswith("Test World")}
+        self.assertEqual(cards, {"Test World 6 b", "Test World 7 b", "Test World 8 b"})
+        self.click("Test World 8 b")
         self.assertEqual(self.app.selectbox(key="profile_pick").value, "Test World 8 b")
         self.click("Back to catalogue")
         self.assertEqual(self.app.text_input(key="catalogue_search").value, "test star 2")
-        self.assertTrue(any(button.label == "Open Test World 8 b" for button in self.app.button))
+        self.assertTrue(any(button.label == "Test World 8 b" for button in self.app.button))
         self.app.text_input(key="catalogue_search").set_value("No matching system")
         self.run_app()
         self.assertTrue(any("No planets match this search" in item.value for item in self.app.info))
